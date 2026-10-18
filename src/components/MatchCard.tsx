@@ -20,7 +20,7 @@ export default function MatchCard({ bundle, href }: { bundle: MatchBundle; href?
   return (
     <Link href={href ?? `/matches/${match.id}`} className="card block p-4 transition hover:border-pitch/30 hover:shadow-md">
       <div className="flex items-center justify-between text-xs">
-        <span className="font-bold uppercase tracking-wider text-ink/50">Match {match.match_no} · {match.overs} ov</span>
+        <span className="font-bold uppercase tracking-wider text-ink/50">Match {match.match_no} · {match.overs} ov{match.common_player_id ? " · 🤝 common" : ""}</span>
         <StatusChip status={match.status} />
       </div>
       <div className="mt-2 space-y-1">

@@ -1,5 +1,6 @@
 -- Sunday Cricket — database schema
--- Paste this whole file into Supabase → SQL Editor → New query → Run.
+-- For a NEW installation: paste this whole file into Supabase → SQL Editor → New query → Run.
+-- Already running the app? Run the files in supabase/migrations/ instead (they never delete data).
 -- Safe to re-run: it only creates things that don't exist yet.
 
 create table if not exists players (
@@ -14,6 +15,9 @@ create table if not exists match_days (
   date date not null,
   venue text,
   notes text,
+  mvp_player_id uuid references players(id) on delete set null,
+  mvp_note text,
+  locked boolean,
   created_at timestamptz not null default now()
 );
 
@@ -40,6 +44,7 @@ create table if not exists matches (
   winner_team_id uuid references day_teams(id) on delete set null,
   result_text text,
   summary text,
+  common_player_id uuid references players(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -65,9 +70,10 @@ create table if not exists balls (
   runs_bat int not null default 0,
   extra_type text check (extra_type in ('wide','no_ball','bye','leg_bye')),
   extra_runs int not null default 0,
-  wicket_type text check (wicket_type in ('bowled','caught','lbw','run_out','stumped','hit_wicket','retired')),
+  wicket_type text check (wicket_type in ('bowled','caught','lbw','run_out','stumped','hit_wicket','out_of_box','retired')),
   dismissed_id uuid references players(id),
   fielder_id uuid references players(id),
+  non_delivery boolean not null default false,
   created_at timestamptz not null default now(),
   unique (innings_id, seq)
 );

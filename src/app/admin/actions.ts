@@ -6,7 +6,9 @@ import { revalidatePath } from "next/cache";
 import { COOKIE, checkCredentials, cookieOptions, makeSessionToken, requireAdmin } from "@/lib/auth";
 import { store } from "@/lib/data/store";
 import type { DayTeam, Match, Photo, Player } from "@/lib/types";
-import { deleteDayCascade, deleteMatchCascade, regenerateSummary, startMatch } from "@/lib/data/matchOps";
+import {
+  assertDayEditable, assertMatchEditable, deleteDayCascade, deleteMatchCascade, regenerateSummary, setOvers, startMatch,
+} from "@/lib/data/matchOps";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
 
@@ -97,6 +99,7 @@ export async function createDay(_: ActionState, fd: FormData): Promise<ActionSta
 export async function updateDay(_: ActionState, fd: FormData): Promise<ActionState> {
   try {
     requireAdmin();
+    await assertDayEditable(str(fd, "id"));
     await store().update("match_days", str(fd, "id"), {
       date: str(fd, "date"),
       venue: str(fd, "venue") || null,
@@ -111,6 +114,7 @@ export async function updateDay(_: ActionState, fd: FormData): Promise<ActionSta
 
 export async function deleteDay(fd: FormData) {
   requireAdmin();
+  await assertDayEditable(str(fd, "id"));
   await deleteDayCascade(str(fd, "id"));
   revalidatePath("/", "layout");
   redirect("/admin");
@@ -126,6 +130,7 @@ export async function saveTeam(_: ActionState, fd: FormData): Promise<ActionStat
     const name = str(fd, "name");
     const playerIds = fd.getAll("player_ids").map(String).filter(Boolean);
     const captain = str(fd, "captain_id") || null;
+    await assertDayEditable(dayId);
     if (!name) return { error: "Give the team a name" };
     if (playerIds.length < 2) return { error: "Pick at least 2 players" };
     if (captain && !playerIds.includes(captain)) return { error: "Captain must be in the team" };
@@ -150,6 +155,9 @@ export async function saveTeam(_: ActionState, fd: FormData): Promise<ActionStat
 export async function deleteTeam(fd: FormData) {
   requireAdmin();
   const id = str(fd, "id");
+  const team = await store().get<DayTeam>("day_teams", id);
+  if (!team) return;
+  await assertDayEditable(team.match_day_id);
   const matches = await store().list<Match>("matches", { team_a_id: id });
   const matches2 = await store().list<Match>("matches", { team_b_id: id });
   for (const m of [...matches, ...matches2]) await deleteMatchCascade(m.id);
@@ -168,6 +176,7 @@ export async function createMatch(_: ActionState, fd: FormData): Promise<ActionS
     const b = str(fd, "team_b_id");
     const overs = Number(str(fd, "overs"));
     const pps = Number(str(fd, "players_per_side"));
+    await assertDayEditable(dayId);
     if (!a || !b || a === b) return { error: "Pick two different teams" };
     if (!Number.isInteger(overs) || overs < 1 || overs > 50) return { error: "Overs must be 1–50" };
     if (!Number.isInteger(pps) || pps < 2 || pps > 15) return { error: "Players per side must be 2–15" };
@@ -196,9 +205,9 @@ export async function updateMatchSettings(_: ActionState, fd: FormData): Promise
     const pps = Number(str(fd, "players_per_side"));
     if (!Number.isInteger(overs) || overs < 1 || overs > 50) return { error: "Overs must be 1–50" };
     if (!Number.isInteger(pps) || pps < 2 || pps > 15) return { error: "Players per side must be 2–15" };
-    await store().update("matches", str(fd, "id"), { overs, players_per_side: pps });
-    const { syncMatch } = await import("@/lib/data/matchOps");
-    await syncMatch(str(fd, "id"));
+    await assertMatchEditable(str(fd, "id"));
+    await store().update("matches", str(fd, "id"), { players_per_side: pps });
+    await setOvers(str(fd, "id"), overs); // validates against overs already bowled, then re-syncs
     revalidatePath("/", "layout");
     return { ok: "Saved" };
   } catch (e) {
@@ -211,7 +220,7 @@ export async function startMatchAction(_: ActionState, fd: FormData): Promise<Ac
     requireAdmin();
     const decision = str(fd, "toss_decision");
     if (decision !== "bat" && decision !== "bowl") return { error: "Choose bat or bowl" };
-    await startMatch(str(fd, "id"), str(fd, "toss_winner_id"), decision);
+    await startMatch(str(fd, "id"), str(fd, "toss_winner_id"), decision, str(fd, "common_player_id") || null);
     revalidatePath("/", "layout");
     return { ok: "Match started" };
   } catch (e) {
@@ -222,7 +231,7 @@ export async function startMatchAction(_: ActionState, fd: FormData): Promise<Ac
 export async function deleteMatch(fd: FormData) {
   requireAdmin();
   const id = str(fd, "id");
-  const m = await store().get<Match>("matches", id);
+  const m = await assertMatchEditable(id);
   await deleteMatchCascade(id);
   revalidatePath("/", "layout");
   redirect(m ? `/admin/days/${m.match_day_id}` : "/admin");
@@ -231,6 +240,7 @@ export async function deleteMatch(fd: FormData) {
 export async function saveSummary(_: ActionState, fd: FormData): Promise<ActionState> {
   try {
     requireAdmin();
+    await assertMatchEditable(str(fd, "id"));
     await store().update("matches", str(fd, "id"), { summary: str(fd, "summary") || null });
     revalidatePath("/", "layout");
     return { ok: "Summary saved" };
@@ -281,4 +291,35 @@ export async function movePhoto(fd: FormData) {
   [all[i], all[j]] = [all[j], all[i]];
   for (let k = 0; k < all.length; k++) if (all[k].sort !== k) await store().update("photos", all[k].id, { sort: k });
   revalidatePath("/", "layout");
+}
+
+/* ---------- History lock ---------- */
+
+export async function setDayLock(fd: FormData) {
+  requireAdmin();
+  const v = str(fd, "locked");
+  // "auto" = back to automatic (locked once the day is in the past)
+  await store().update("match_days", str(fd, "id"), { locked: v === "true" ? true : v === "false" ? false : null });
+  revalidatePath("/", "layout");
+}
+
+/* ---------- MVP of the day (players' vote) ---------- */
+
+export async function setMvp(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    requireAdmin();
+    const id = str(fd, "id");
+    const pid = str(fd, "mvp_player_id") || null;
+    if (pid) {
+      const teams = await store().list<DayTeam>("day_teams", { match_day_id: id });
+      const matches = await store().list<Match>("matches", { match_day_id: id });
+      const played = new Set([...teams.flatMap((t) => t.player_ids), ...matches.map((m) => m.common_player_id).filter(Boolean) as string[]]);
+      if (!played.has(pid)) return { error: "Pick someone who played today" };
+    }
+    await store().update("match_days", id, { mvp_player_id: pid, mvp_note: pid ? str(fd, "mvp_note").slice(0, 200) || null : null });
+    revalidatePath("/", "layout");
+    return { ok: pid ? "MVP of the day saved 🏅" : "MVP cleared" };
+  } catch (e) {
+    return fail(e);
+  }
 }

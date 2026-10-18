@@ -226,3 +226,86 @@ describe("series, stats, captains, POTD", () => {
     expect(text).toContain("A1");
   });
 });
+
+/* ---------- October update ---------- */
+import { matchSquad, pointsBreakdown } from "./stats";
+import { runRateSeries } from "./runrate";
+
+describe("retire batter (no ball used)", () => {
+  it("frees the slot without using a delivery or changing strike/over", () => {
+    const balls = [
+      ball({ runs_bat: 1 }), // A2 now on strike
+      { ...ball({ striker_id: "A2", non_striker_id: "A1", wicket_type: "retired", dismissed_id: "A1" }), non_delivery: true },
+    ];
+    const s = computeInnings(balls, rules);
+    expect(s.legalBalls).toBe(1);
+    expect(s.wickets).toBe(0);
+    expect(s.striker).toBe("A2");
+    expect(s.nonStriker).toBeNull();
+    const sc = buildScorecard(balls);
+    expect(sc.batting.find((r) => r.playerId === "A1")).toMatchObject({ retired: true, out: false, balls: 1 });
+    expect(sc.bowling[0].legalBalls).toBe(1);
+  });
+  it("a retire right after an over keeps the 'new bowler needed' state", () => {
+    const over = Array.from({ length: 6 }, () => ball({}));
+    const s = computeInnings([...over, { ...ball({ striker_id: "A2", non_striker_id: "A1", wicket_type: "retired", dismissed_id: "A2" }), non_delivery: true }], rules);
+    expect(s.overJustCompleted).toBe(true);
+    expect(s.legalBalls).toBe(6);
+  });
+});
+
+describe("out of box", () => {
+  it("is a wicket credited to the bowler", () => {
+    const b = [ball({ wicket_type: "out_of_box", dismissed_id: "A1" })];
+    expect(computeInnings(b, rules).wickets).toBe(1);
+    const sc = buildScorecard(b);
+    expect(sc.bowling[0].wickets).toBe(1);
+    expect(dismissalText(sc.batting[0], (id) => id ?? "")).toBe("out of box b B1");
+  });
+});
+
+describe("common player & points", () => {
+  it("common player is in both squads and gets no win/loss", () => {
+    const b = mkBundle("c1", [6, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]);
+    b.match.common_player_id = "C";
+    b.balls.push({ ...ball({ inn: "c1i1", striker_id: "C", non_striker_id: "A2", bowler_id: "C", runs_bat: 0 }), match_id: "c1" });
+    expect(matchSquad(b, "TA")).toContain("C");
+    expect(matchSquad(b, "TB")).toContain("C");
+    const perf = matchPerformances(b).find((p) => p.playerId === "C")!;
+    expect(perf.common).toBe(true);
+    expect(perf.won).toBeNull();
+  });
+  it("batting + bowling + fielding + win = the same total as before", () => {
+    const p = { runs: 34, fours: 3, sixes: 2, wickets: 3, maidens: 1, catches: 1, runOuts: 1, stumpings: 0, won: true } as Parameters<typeof pointsBreakdown>[0];
+    const b = pointsBreakdown(p);
+    const old = 34 + 3 + 4 + 3 * 20 + 10 + 2 * 8 + 10 + 0 + 10 + 5;
+    expect(b.total).toBe(old);
+    expect(b.bat + b.bowl + b.field + b.win).toBe(old);
+  });
+});
+
+describe("overs changed mid-match", () => {
+  it("innings 1 stays finished once the chase has started", () => {
+    const b = mkBundle("o1", [1, 1, 1, 1, 1, 1], [1]);
+    b.match.overs = 3; // overs increased during the chase
+    const s = computeMatch(b);
+    expect(s.phase).toBe("second");
+    expect(s.target).toBe(7);
+  });
+  it("extending overs during the innings break re-opens innings 1", () => {
+    const b = mkBundle("o2", [1, 1, 1, 1, 1, 1], []);
+    b.innings.push({ id: "o2i2", match_id: "o2", innings_no: 2, batting_team_id: "TB", bowling_team_id: "TA", closed: false, created_at: "" });
+    b.match.overs = 2;
+    expect(computeMatch(b).phase).toBe("first");
+  });
+});
+
+describe("run rate series", () => {
+  it("gives runs per over and running run rate", () => {
+    const b = mkBundle("r1", [4, 4, 0, 0, 0, 2], [1, 1, 1]);
+    b.match.overs = 2;
+    const [s1, s2] = runRateSeries(b);
+    expect(s1.points[0]).toMatchObject({ over: 1, runs: 10, runRate: 10, partial: false });
+    expect(s2.points[0]).toMatchObject({ runs: 3, partial: true, runRate: 6 });
+  });
+});

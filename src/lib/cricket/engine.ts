@@ -2,8 +2,8 @@ import type { Ball, ID, Innings, Match, MatchBundle, WicketType } from "../types
 
 /* ---------- Ball-level helpers ---------- */
 
-export const isLegal = (b: Pick<Ball, "extra_type">) =>
-  b.extra_type !== "wide" && b.extra_type !== "no_ball";
+export const isLegal = (b: Pick<Ball, "extra_type" | "non_delivery">) =>
+  !b.non_delivery && b.extra_type !== "wide" && b.extra_type !== "no_ball";
 
 export const totalRuns = (b: Pick<Ball, "runs_bat" | "extra_runs">) => b.runs_bat + b.extra_runs;
 
@@ -12,13 +12,14 @@ export const bowlerRuns = (b: Pick<Ball, "runs_bat" | "extra_runs" | "extra_type
   b.runs_bat + (b.extra_type === "wide" || b.extra_type === "no_ball" ? b.extra_runs : 0);
 
 /** Did the batter face this delivery? (wides don't count as balls faced) */
-export const facedByBatter = (b: Pick<Ball, "extra_type">) => b.extra_type !== "wide";
+export const facedByBatter = (b: Pick<Ball, "extra_type" | "non_delivery">) =>
+  !b.non_delivery && b.extra_type !== "wide";
 
 /** Counts toward the team's wicket tally (retired doesn't). */
 export const isTeamWicket = (b: Pick<Ball, "wicket_type">) =>
   !!b.wicket_type && b.wicket_type !== "retired";
 
-const BOWLER_WICKETS: WicketType[] = ["bowled", "caught", "lbw", "stumped", "hit_wicket"];
+const BOWLER_WICKETS: WicketType[] = ["bowled", "caught", "lbw", "stumped", "hit_wicket", "out_of_box"];
 export const isBowlerWicket = (b: Pick<Ball, "wicket_type">) =>
   !!b.wicket_type && BOWLER_WICKETS.includes(b.wicket_type);
 
@@ -43,6 +44,7 @@ export const oversText = (legalBalls: number) => `${Math.floor(legalBalls / 6)}.
 export const oversDecimal = (legalBalls: number) => legalBalls / 6;
 
 export function ballSymbol(b: Ball): string {
+  if (b.non_delivery) return "R";
   const w = b.wicket_type && b.wicket_type !== "retired" ? "W" : "";
   let s: string;
   switch (b.extra_type) {
@@ -118,6 +120,20 @@ export function computeInnings(balls: Ball[], rules: InningsRules): InningsState
   };
 
   for (const b of sorted) {
+    if (b.non_delivery) {
+      // e.g. a batter retiring between deliveries: frees their slot, uses no ball,
+      // and leaves the over / strike / bowler exactly as they were
+      seen(b.striker_id);
+      seen(b.non_striker_id);
+      const out = b.dismissed_id ?? b.striker_id;
+      if (b.wicket_type && isTeamWicket(b)) {
+        wickets++;
+        dismissed.add(out);
+      }
+      striker = b.striker_id === out ? null : b.striker_id;
+      nonStriker = b.non_striker_id === out ? null : b.non_striker_id;
+      continue;
+    }
     if (legal > 0 && legal % 6 === 0 && overJustCompleted) currentOver = [];
     seen(b.striker_id);
     seen(b.non_striker_id);
@@ -249,9 +265,12 @@ export function computeMatch(bundle: MatchBundle): MatchState {
   };
   if (!inn1) return base;
 
+  // once the chase has started (a ball bowled in innings 2), innings 1 stays finished even if
+  // the overs are changed later; before that, extending the overs re-opens innings 1
+  const chaseStarted = !!inn2 && bundle.balls.some((b) => b.innings_id === inn2.id);
   const first = computeInnings(
     bundle.balls.filter((b) => b.innings_id === inn1.id),
-    { ...rules, closed: inn1.closed },
+    { ...rules, closed: inn1.closed || chaseStarted },
   );
   base.first = first;
   if (!first.complete) return { ...base, phase: "first" };

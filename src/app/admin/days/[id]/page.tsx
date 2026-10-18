@@ -4,7 +4,9 @@ import ActionForm, { ConfirmButton, Submit } from "@/components/ActionForm";
 import MatchCard from "@/components/MatchCard";
 import PhotoUploader from "@/components/admin/PhotoUploader";
 import TeamEditor from "@/components/admin/TeamEditor";
-import { createMatch, deleteDay, deletePhoto, deleteTeam, movePhoto, updateDay, updatePhoto } from "../../actions";
+import { createMatch, deleteDay, deletePhoto, deleteTeam, movePhoto, setDayLock, setMvp, updateDay, updatePhoto } from "../../actions";
+import { isDayLocked, londonToday } from "@/lib/lock";
+import { dayOverview } from "@/lib/dayView";
 import { getDayFull, getPlayers } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
 
@@ -18,6 +20,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
   const takenBy: Record<string, string> = {};
   for (const t of teams) for (const p of t.player_ids) takenBy[p] = t.id;
   const last = bundles[bundles.length - 1]?.match;
+  const locked = isDayLocked(day);
+  const isPast = day.date < londonToday();
+  const ov = dayOverview(data, names);
+  const playedIds = [...new Set([...teams.flatMap((t) => t.player_ids), ...bundles.map((b) => b.match.common_player_id).filter(Boolean) as string[]])];
   const defaultPps = last?.players_per_side ?? (teams.length >= 2 ? Math.min(teams[0].player_ids.length, teams[1].player_ids.length) : 6);
 
   return (
@@ -28,13 +34,55 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
         <Link href={`/days/${day.id}`} className="btn-ghost text-sm">View public page</Link>
       </div>
 
+      {locked ? (
+        <section className="card flex flex-wrap items-center justify-between gap-3 border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm">
+            <b>🔒 This Sunday is locked</b> so its scores, teams and matches can&apos;t be changed by accident.
+            You can still add photos and pick the MVP.
+          </p>
+          <form action={setDayLock}>
+            <input type="hidden" name="id" value={day.id} />
+            <input type="hidden" name="locked" value="false" />
+            <ConfirmButton className="btn-ghost text-sm" message="Unlock this Sunday so you can correct its scores? Remember to lock it again afterwards.">Unlock for corrections</ConfirmButton>
+          </form>
+        </section>
+      ) : isPast ? (
+        <section className="card flex flex-wrap items-center justify-between gap-3 border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm"><b>🔓 Unlocked for corrections.</b> Lock it again when you&apos;re done.</p>
+          <form action={setDayLock}>
+            <input type="hidden" name="id" value={day.id} />
+            <input type="hidden" name="locked" value="auto" />
+            <button className="btn-primary text-sm">🔒 Lock again</button>
+          </form>
+        </section>
+      ) : null}
+
+      {/* MVP vote */}
+      {playedIds.length > 0 && (
+        <section className="card p-4">
+          <h2 className="h2">🗳️ MVP of the day — players&apos; vote</h2>
+          <p className="text-sm muted">Ask everyone who played to nominate a player, then pick the winner here. This is separate from the points-based Player of the Day{ov.potd ? ` (currently ${names[ov.potd.playerId]})` : ""}.</p>
+          <ActionForm action={setMvp} className="mt-3 grid gap-3 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
+            <input type="hidden" name="id" value={day.id} />
+            <label><span className="label">Most Valuable Player</span>
+              <select name="mvp_player_id" defaultValue={day.mvp_player_id ?? ""} className="input">
+                <option value="">— not chosen yet —</option>
+                {[...playedIds].sort((a, b) => (names[a] ?? "").localeCompare(names[b] ?? "")).map((p) => <option key={p} value={p}>{names[p]}</option>)}
+              </select>
+            </label>
+            <label><span className="label">Why? (optional)</span><input name="mvp_note" defaultValue={day.mvp_note ?? ""} maxLength={200} className="input" placeholder="e.g. Kept the team going and took that screamer at long-on" /></label>
+            <Submit>Save MVP</Submit>
+          </ActionForm>
+        </section>
+      )}
+
       {/* Matches */}
       <section className="space-y-3">
         <h2 className="h2">Matches</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           {bundles.map((b) => <MatchCard key={b.match.id} bundle={b} href={`/admin/matches/${b.match.id}/score`} />)}
         </div>
-        {teams.length < 2 ? (
+        {locked ? null : teams.length < 2 ? (
           <p className="card p-4 text-sm text-amber-700">Create at least two teams below before adding a match.</p>
         ) : (
           <div className="card p-4">
@@ -58,7 +106,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
       {/* Teams */}
       <section className="space-y-3">
         <h2 className="h2">Teams</h2>
-        {teams.map((t) => (
+        {locked && teams.map((t) => (
+          <div key={t.id} className="card p-4 text-sm"><b>{t.name}</b> <span className="muted">· {t.player_ids.map((p) => names[p]).join(", ")}{t.captain_id ? ` · c ${names[t.captain_id]}` : ""}</span></div>
+        ))}
+        {!locked && teams.map((t) => (
           <details key={t.id} className="card p-4">
             <summary className="cursor-pointer">
               <b>{t.name}</b> <span className="text-sm muted">· {t.player_ids.length} players{t.captain_id ? ` · c ${names[t.captain_id]}` : ""}</span>
@@ -70,10 +121,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
             </form>
           </details>
         ))}
-        <details className="card p-4" open={teams.length < 2}>
+        {!locked && <details className="card p-4" open={teams.length < 2}>
           <summary className="cursor-pointer font-semibold text-pitch">+ New team</summary>
           <div className="mt-3"><TeamEditor dayId={day.id} players={players} takenBy={takenBy} /></div>
-        </details>
+        </details>}
       </section>
 
       {/* Photos */}
@@ -103,7 +154,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
       </section>
 
       {/* Day details */}
-      <section className="card p-4">
+      {!locked && <section className="card p-4">
         <h2 className="h2">Day details</h2>
         <ActionForm action={updateDay} className="mt-3 grid gap-3 sm:grid-cols-2">
           <input type="hidden" name="id" value={day.id} />
@@ -116,7 +167,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
           <input type="hidden" name="id" value={day.id} />
           <ConfirmButton message="Delete this whole Sunday, including all matches, scores and photos? This can't be undone.">Delete this Sunday</ConfirmButton>
         </form>
-      </section>
+      </section>}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { MatchBundle } from "@/lib/types";
 import { computeMatch, teamName } from "@/lib/cricket/engine";
 import { buildScorecard, dismissalText } from "@/lib/cricket/scorecard";
 import { f1, f2 } from "@/lib/format";
+import { matchSquad } from "@/lib/cricket/stats";
 
 export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; names: Record<string, string> }) {
   const st = computeMatch(bundle);
@@ -18,7 +19,7 @@ export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; 
         const balls = bundle.balls.filter((b) => b.innings_id === inn!.id);
         const sc = buildScorecard(balls);
         const team = bundle.teamA.id === inn!.batting_team_id ? bundle.teamA : bundle.teamB;
-        const yetToBat = team.player_ids.filter((p) => !sc.batting.some((r) => r.playerId === p));
+        const yetToBat = matchSquad(bundle, team.id).filter((p) => !sc.batting.some((r) => r.playerId === p));
         const atCrease = new Set([state!.striker, state!.nonStriker].filter(Boolean) as string[]);
         return (
           <section key={inn!.id} className="card overflow-hidden">
@@ -85,12 +86,20 @@ export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; 
   );
 }
 
+/** One ball in an over strip. Solid fills + a ring so every ball reads on white cards AND the dark-green scoreboard. */
 export function BallDot({ s }: { s: string }) {
   const cls = s.startsWith("W")
-    ? "bg-ball text-white"
-    : s === "4" ? "bg-sky-600 text-white"
-    : s === "6" ? "bg-gold text-pitch-900"
-    : /wd|nb|b|lb/.test(s) ? "bg-amber-100 text-amber-800"
-    : "bg-black/5 text-ink/80";
-  return <span className={`inline-grid h-7 min-w-7 place-items-center rounded-full px-1.5 text-xs font-bold ${cls}`}>{s}</span>;
+    ? "bg-ball text-white ring-white/70"
+    : s === "4" ? "bg-sky-600 text-white ring-white/70"
+    : s === "6" ? "bg-gold text-pitch-900 ring-white/70"
+    : s === "R" ? "bg-violet-100 text-violet-900 ring-violet-300"
+    : /wd|nb|b|lb/.test(s) ? "bg-amber-200 text-amber-950 ring-amber-400"
+    : s === "•" ? "bg-slate-200 text-slate-800 ring-slate-300"
+    : "bg-white text-pitch-900 ring-pitch-200";
+  const label = s === "•" ? "dot ball" : s === "R" ? "batter retired" : s;
+  return (
+    <span title={label} aria-label={label} className={`inline-grid h-7 min-w-7 place-items-center rounded-full px-1.5 text-xs font-bold ring-1 ${cls}`}>
+      {s}
+    </span>
+  );
 }

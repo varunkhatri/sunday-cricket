@@ -25,7 +25,12 @@ export interface PlayerMatchPerf {
   stumpings: number;
   /** true = team won, false = lost, null = tie / not finished */
   won: boolean | null;
+  /** true when this player was the match's common player (played for both teams) */
+  common: boolean;
   points: number;
+  batPoints: number;
+  bowlPoints: number;
+  fieldPoints: number;
 }
 
 export const POINTS = {
@@ -41,19 +46,31 @@ export const POINTS = {
   win: 5,
 };
 
-export function perfPoints(p: Omit<PlayerMatchPerf, "points">) {
-  return (
+type RawPerf = Omit<PlayerMatchPerf, "points" | "batPoints" | "bowlPoints" | "fieldPoints">;
+
+/** Same MVP formula as always, split into batting / bowling / fielding parts (+ win bonus). */
+export function pointsBreakdown(p: RawPerf) {
+  const bat =
     p.runs * POINTS.run +
     p.fours * POINTS.fourBonus +
     p.sixes * POINTS.sixBonus +
-    p.wickets * POINTS.wicket +
-    p.maidens * POINTS.maiden +
-    (p.catches + p.runOuts + p.stumpings) * POINTS.fielding +
     (p.runs >= 30 ? POINTS.thirty : 0) +
-    (p.runs >= 50 ? POINTS.fifty : 0) +
-    (p.wickets >= 3 ? POINTS.threeFor : 0) +
-    (p.won ? POINTS.win : 0)
-  );
+    (p.runs >= 50 ? POINTS.fifty : 0);
+  const bowl = p.wickets * POINTS.wicket + p.maidens * POINTS.maiden + (p.wickets >= 3 ? POINTS.threeFor : 0);
+  const field = (p.catches + p.runOuts + p.stumpings) * POINTS.fielding;
+  const win = p.won ? POINTS.win : 0;
+  return { bat, bowl, field, win, total: bat + bowl + field + win };
+}
+
+export function perfPoints(p: RawPerf) {
+  return pointsBreakdown(p).total;
+}
+
+/** Everyone who can play for a team in this match: its squad plus the common player. */
+export function matchSquad(bundle: MatchBundle, teamId: ID): ID[] {
+  const t = teamId === bundle.teamA.id ? bundle.teamA : bundle.teamB;
+  const c = bundle.match.common_player_id;
+  return c && !t.player_ids.includes(c) ? [...t.player_ids, c] : t.player_ids;
 }
 
 export function teamOf(bundle: MatchBundle, playerId: ID): DayTeam | null {
@@ -66,8 +83,11 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
   const state = computeMatch(bundle);
   const winner = state.result?.winnerId ?? null;
   const finished = state.phase === "done";
-  const perfs = new Map<ID, Omit<PlayerMatchPerf, "points">>();
-  const get = (id: ID, teamId: ID | null) => {
+  const perfs = new Map<ID, RawPerf>();
+  const common = bundle.match.common_player_id ?? null;
+  const get = (id: ID, teamIdIn: ID | null) => {
+    // the common player belongs to neither side, so gets no win/loss
+    const teamId = id === common ? null : teamIdIn;
     if (!perfs.has(id))
       perfs.set(id, {
         playerId: id,
@@ -89,12 +109,14 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
         runOuts: 0,
         stumpings: 0,
         won: finished && teamId ? (winner ? winner === teamId : null) : null,
+        common: id === common,
       });
     return perfs.get(id)!;
   };
 
   // everyone named in a squad "played"
   for (const t of [bundle.teamA, bundle.teamB]) for (const pid of t.player_ids) get(pid, t.id);
+  if (common) get(common, null);
 
   for (const inn of bundle.innings) {
     const sc = buildScorecard(bundle.balls.filter((b) => b.innings_id === inn.id));
@@ -122,7 +144,10 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
       p.stumpings += f.stumpings;
     }
   }
-  return [...perfs.values()].map((p) => ({ ...p, points: perfPoints(p) }));
+  return [...perfs.values()].map((p) => {
+    const b = pointsBreakdown(p);
+    return { ...p, points: b.total, batPoints: b.bat, bowlPoints: b.bowl, fieldPoints: b.field };
+  });
 }
 
 /* ---------- Aggregation over many matches ---------- */
@@ -379,6 +404,11 @@ export function aggregateCaptains(
 export interface DayAward {
   playerId: ID;
   points: number;
+  batPoints: number;
+  bowlPoints: number;
+  fieldPoints: number;
+  fours: number;
+  bowlBalls: number;
   runs: number;
   balls: number;
   wickets: number;
@@ -390,8 +420,16 @@ export interface DayAward {
 export function rankDay(perfs: PlayerMatchPerf[]): DayAward[] {
   const m = new Map<ID, DayAward>();
   for (const p of perfs) {
-    const a = m.get(p.playerId) ?? { playerId: p.playerId, points: 0, runs: 0, balls: 0, wickets: 0, bowlRuns: 0, catches: 0, sixes: 0 };
+    const a = m.get(p.playerId) ?? {
+      playerId: p.playerId, points: 0, batPoints: 0, bowlPoints: 0, fieldPoints: 0, fours: 0, bowlBalls: 0,
+      runs: 0, balls: 0, wickets: 0, bowlRuns: 0, catches: 0, sixes: 0,
+    };
     a.points += p.points;
+    a.batPoints += p.batPoints;
+    a.bowlPoints += p.bowlPoints;
+    a.fieldPoints += p.fieldPoints;
+    a.fours += p.fours;
+    a.bowlBalls += p.bowlBalls;
     a.runs += p.runs;
     a.balls += p.balls;
     a.wickets += p.wickets;

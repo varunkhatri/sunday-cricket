@@ -4,6 +4,7 @@ import { createDay } from "./actions";
 import { getPlayers, listDays } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
 import { dataMode } from "@/lib/data/store";
+import { isDayLocked } from "@/lib/lock";
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +49,15 @@ export default async function AdminHome() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="h2">Sundays</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="h2">Sundays</h2>
+          {days.length > 0 && <a href="/api/export" className="btn-ghost text-sm">⬇ Download backup</a>}
+        </div>
+        {days.length > 0 && <p className="text-xs muted">🔒 Previous Sundays lock automatically so their scores can&apos;t be changed by accident.</p>}
         {days.length === 0 && <p className="muted">None yet.</p>}
         {days.map((d) => (
           <Link key={d.id} href={`/admin/days/${d.id}`} className="card flex items-center justify-between p-4 hover:border-pitch/30">
-            <span className="font-semibold">{fmtDate(d.date)}{d.venue ? <span className="font-normal muted"> · {d.venue}</span> : null}</span>
+            <span className="font-semibold">{isDayLocked(d) && "🔒 "}{fmtDate(d.date)}{d.venue ? <span className="font-normal muted"> · {d.venue}</span> : null}</span>
             <span className="text-pitch">Manage →</span>
           </Link>
         ))}

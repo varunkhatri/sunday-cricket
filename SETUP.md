@@ -97,3 +97,21 @@ Local mode keeps data in the `.data/` folder. It's only for trying things out. T
 - `npm test`: runs the cricket-rules unit tests
 - `npm run build`: production build
 - `node e2e/run.mjs http://localhost:3000`: full browser test against a **local-mode** server with the demo data. It adds test players, a day and a match.
+
+
+---
+
+## Updating the app (e.g. the October update)
+1. **First** run any new file in `supabase/migrations/` in Supabase → SQL Editor (it only adds columns — your history is untouched).
+2. **Then** copy the new code into your project folder in VS Code and push:
+   ```powershell
+   git add .
+   git commit -m "October update"
+   git push
+   ```
+   Vercel redeploys automatically in a minute or two.
+
+## Protecting your history
+- Previous Sundays **lock automatically** the day after they're played: their scores, teams and matches can't be changed or deleted. Photos and the MVP vote can still be added.
+- If you really need to fix an old score, open that Sunday in the Umpire desk → **Unlock for corrections**, fix it, then **Lock again**.
+- **Umpire desk → Download backup** saves everything (all Sundays, balls, players) as one file. Worth doing once a month.

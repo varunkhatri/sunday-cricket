@@ -21,6 +21,7 @@ export default async function PlayerPage({ params }: { params: { id: string } })
     return rankDay(perfs.filter((p) => ids.has(p.matchId)))[0]?.playerId === player.id;
   });
   const cap = aggregateCaptains(days).find((c) => c.playerId === player.id);
+  const mvpWins = days.filter((d) => d.day.mvp_player_id === player.id).length;
   const matchInfo = new Map(days.flatMap((d) => d.bundles.map((b) => [b.match.id, { b, date: d.day.date }] as const)));
   const recent = [...mine].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
 
@@ -39,6 +40,7 @@ export default async function PlayerPage({ params }: { params: { id: string } })
           <h1 className="h1">{player.name}</h1>
           {player.nickname && <p className="muted">“{player.nickname}”</p>}
           {potdWins.length > 0 && <p className="mt-1 text-sm font-semibold text-gold-700">{"🏆".repeat(Math.min(potdWins.length, 5))} Player of the Day ×{potdWins.length}</p>}
+          {mvpWins > 0 && <p className="mt-1 text-sm font-semibold text-violet-800">{"🏅".repeat(Math.min(mvpWins, 5))} MVP of the Day (players&apos; vote) ×{mvpWins}</p>}
         </div>
       </div>
 
@@ -93,7 +95,7 @@ export default async function PlayerPage({ params }: { params: { id: string } })
                       <td className="num">{p.batted ? `${p.runs}${p.out ? "" : "*"} (${p.balls})` : "–"}</td>
                       <td className="num">{p.bowled ? `${p.wickets}/${p.bowlRuns}` : "–"}</td>
                       <td className="num">{p.catches + p.runOuts + p.stumpings || "–"}</td>
-                      <td>{p.won === true ? <span className="chip bg-pitch-100 text-pitch-700">Won</span> : p.won === false ? <span className="chip bg-black/5 text-ink/60">Lost</span> : <span className="chip bg-gold-100 text-gold-700">Tie</span>}</td>
+                      <td>{p.common ? <span className="chip bg-violet-100 text-violet-900">🤝 Common</span> : p.won === true ? <span className="chip bg-pitch-100 text-pitch-700">Won</span> : p.won === false ? <span className="chip bg-black/5 text-ink/60">Lost</span> : <span className="chip bg-gold-100 text-gold-700">Tie</span>}</td>
                     </tr>
                   );
                 })}

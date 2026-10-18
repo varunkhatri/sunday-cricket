@@ -108,7 +108,7 @@ function boundaryText(r: BattingRow) {
 function hatTrickBowlers(balls: Ball[]): ID[] {
   const byBowler = new Map<ID, Ball[]>();
   for (const b of [...balls].sort((a, b) => a.seq - b.seq)) {
-    if (!isLegal(b) && !b.wicket_type) continue;
+    if (b.non_delivery || (!isLegal(b) && !b.wicket_type)) continue;
     byBowler.set(b.bowler_id, [...(byBowler.get(b.bowler_id) ?? []), b]);
   }
   const out: ID[] = [];

@@ -4,6 +4,8 @@ import AutoRefresh from "@/components/AutoRefresh";
 import { StatusChip } from "@/components/MatchCard";
 import ScorecardView, { BallDot } from "@/components/ScorecardView";
 import Summary from "@/components/Summary";
+import RunRateCharts from "@/components/RunRateCharts";
+import { runRateSeries } from "@/lib/cricket/runrate";
 import { computeMatch, ballSymbol, teamName } from "@/lib/cricket/engine";
 import { getDay, getMatchBundle, getPlayerNames } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
@@ -31,6 +33,7 @@ export default async function MatchPage({ params }: { params: { id: string } }) 
         </div>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm muted">
           <StatusChip status={bundle.match.status} /> Match {bundle.match.match_no} · {bundle.match.overs} overs · {bundle.match.players_per_side} a side
+          {bundle.match.common_player_id && <> · 🤝 common player: <b className="text-ink">{names[bundle.match.common_player_id]}</b></>}
         </p>
         {toss && <p className="mt-1 text-sm muted">🪙 {toss}</p>}
         {isAdmin() && <Link href={`/admin/matches/${bundle.match.id}/score`} className="btn-gold mt-3 text-sm">Open scorer</Link>}
@@ -55,6 +58,7 @@ export default async function MatchPage({ params }: { params: { id: string } }) 
       {bundle.match.summary && (
         <article className="card p-4 sm:p-5"><Summary text={bundle.match.summary} /></article>
       )}
+      <RunRateCharts series={runRateSeries(bundle)} overs={bundle.match.overs} />
       <ScorecardView bundle={bundle} names={names} />
     </div>
   );

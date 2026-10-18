@@ -5,10 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Ball, ExtraType, MatchBundle, WicketType } from "@/lib/types";
 import { ballSymbol, computeMatch, teamName } from "@/lib/cricket/engine";
 import { buildScorecard } from "@/lib/cricket/scorecard";
+import { matchSquad } from "@/lib/cricket/stats";
 import { BallDot } from "@/components/ScorecardView";
 
 type Names = Record<string, string>;
-type SheetKind = null | "wide" | "no_ball" | "bye" | "leg_bye" | "wicket";
+type SheetKind = null | "wide" | "no_ball" | "bye" | "leg_bye" | "wicket" | "retire" | "overs" | "player" | "common";
 
 const uuid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -24,10 +25,12 @@ const WICKETS: { t: WicketType; label: string }[] = [
   { t: "run_out", label: "Run out" },
   { t: "stumped", label: "Stumped" },
   { t: "hit_wicket", label: "Hit wicket" },
-  { t: "retired", label: "Retired (not out)" },
+  { t: "out_of_box", label: "Out of box" },
 ];
 
-export default function ScorePad({ initial, names }: { initial: MatchBundle; names: Names }) {
+export default function ScorePad({ initial, names: initialNames, allPlayers }: {
+  initial: MatchBundle; names: Names; allPlayers: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const qKey = `sc-queue-${initial.match.id}`;
   const [bundle, setBundle] = useState(initial);
@@ -43,6 +46,8 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
   const [override, setOverride] = useState<{ striker?: string | null; nonStriker?: string | null; bowler?: string | null }>({});
   const [sheet, setSheet] = useState<SheetKind>(null);
   const flushing = useRef(false);
+  const [names, setNames] = useState(initialNames);
+  useEffect(() => setNames((n) => ({ ...n, ...initialNames })), [initialNames]);
 
   // restore unsent balls (e.g. phone lost signal and the page was reloaded)
   useEffect(() => {
@@ -72,6 +77,7 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
       });
       const json = await res.json().catch(() => ({}));
       if (json.bundle) setBundle(json.bundle);
+      if (json.names) setNames(json.names);
       if (res.status === 401) throw Object.assign(new Error("Your login has expired — please log in again"), { fatal: true });
       if (!res.ok) throw Object.assign(new Error(json.error ?? "Error"), { fatal: true, conflict: res.status === 409 });
       return json;
@@ -128,8 +134,12 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
   const bowler = override.bowler !== undefined ? override.bowler : autoBowler;
   const prevOverBowler = cur?.overJustCompleted ? cur.lastBowler : null;
 
+  const battingSquad = matchSquad(bundle, battingTeam.id);
+  const bowlingSquad = matchSquad(bundle, bowlingTeam.id);
+  const common = bundle.match.common_player_id ?? null;
   const dismissed = cur?.dismissed ?? new Set<string>();
-  const available = battingTeam.player_ids.filter((p) => !dismissed.has(p) && p !== striker && p !== nonStriker);
+  const available = battingSquad.filter((p) => !dismissed.has(p) && p !== striker && p !== nonStriker);
+  const retiredIds = new Set(sc.batting.filter((r) => r.retired).map((r) => r.playerId));
   const nm = (id: string | null | undefined) => (id ? names[id] ?? "?" : "—");
   const bat = (id: string | null) => sc.batting.find((r) => r.playerId === id);
   const bowlRow = sc.bowling.find((r) => r.playerId === bowler);
@@ -137,10 +147,14 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
   const inPlay = st.phase === "first" || st.phase === "second";
   const needNonStriker = !nonStriker && available.length > 0;
   const ready = inPlay && !!striker && !!bowler && !needNonStriker && !sheet;
+  const settled = queue.length === 0 && !busy;
+  const noBattersLeft = inPlay && !striker && available.length === 0;
 
   /* ---------- actions ---------- */
-  function record(p: { runs_bat?: number; extra_type?: ExtraType | null; extra_runs?: number; wicket_type?: WicketType | null; dismissed_id?: string | null; fielder_id?: string | null }) {
-    if (!inn || !striker || !bowler) return;
+  function record(p: { runs_bat?: number; extra_type?: ExtraType | null; extra_runs?: number; wicket_type?: WicketType | null; dismissed_id?: string | null; fielder_id?: string | null; non_delivery?: boolean }) {
+    // retiring a batter isn't a delivery, so it doesn't need a bowler to have been picked
+    const bowlerId = p.non_delivery ? bowler ?? cur?.lastBowler ?? bowlingSquad[0] : bowler;
+    if (!inn || !striker || !bowlerId) return;
     const lastSeq = innBalls[innBalls.length - 1]?.seq ?? 0;
     const b: Ball = {
       id: uuid(),
@@ -149,18 +163,20 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
       seq: lastSeq + 1,
       striker_id: striker,
       non_striker_id: nonStriker,
-      bowler_id: bowler,
+      bowler_id: bowlerId,
       runs_bat: p.runs_bat ?? 0,
       extra_type: p.extra_type ?? null,
       extra_runs: p.extra_runs ?? 0,
       wicket_type: p.wicket_type ?? null,
       dismissed_id: p.wicket_type ? p.dismissed_id ?? striker : null,
       fielder_id: p.fielder_id ?? null,
+      non_delivery: !!p.non_delivery,
       created_at: new Date().toISOString(),
     };
     setMsg(null);
     setSheet(null);
-    setOverride({});
+    // keep a freshly-picked bowler when only a batter retires
+    setOverride((o) => (p.non_delivery && o.bowler ? { bowler: o.bowler } : {}));
     setQueue((q) => [...q, b]);
     if (navigator.vibrate) navigator.vibrate(15);
   }
@@ -179,6 +195,30 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
       router.refresh();
     }
   }
+  /** One-off admin actions that change the match itself (not a ball). */
+  async function matchAction(body: object, okMsg?: string) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await post(body);
+      setSheet(null);
+      if (okMsg) setNotice(okMsg);
+      return true;
+    } catch (e) {
+      setMsg((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+      router.refresh();
+    }
+  }
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   async function endInnings() {
     if (!confirm("End this innings now? (e.g. ran out of time or players)")) return;
     setBusy(true);
@@ -266,6 +306,7 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
                   <div className="w-full">
                     {available.length ? (
                       <PlayerSelect label={on ? "Next batter (on strike)" : "Next batter (non-striker)"} value={null} options={available}
+                        hint={(pid) => (retiredIds.has(pid) ? " (retired – can come back)" : pid === common ? " (common player)" : "")}
                         onChange={(v) => setOverride((o) => ({ ...o, [on ? "striker" : "nonStriker"]: v || null }))} />
                     ) : <p className="text-sm muted">No batters left.</p>}
                   </div>
@@ -284,8 +325,8 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
               ) : (
                 <div className="w-full">
                   <PlayerSelect label={cur.legalBalls ? "Bowler for the next over" : "Opening bowler"} value={null}
-                    options={[...bowlingTeam.player_ids.filter((p) => p !== prevOverBowler), ...(prevOverBowler ? [prevOverBowler] : [])]}
-                    hint={(id) => (id === prevOverBowler ? " (bowled last over)" : "")}
+                    options={[...bowlingSquad.filter((p) => p !== prevOverBowler), ...(prevOverBowler ? [prevOverBowler] : [])].filter((p) => p !== striker && p !== nonStriker)}
+                    hint={(id) => (id === prevOverBowler ? " (bowled last over)" : id === common ? " (common player)" : "")}
                     onChange={(v) => setOverride((o) => ({ ...o, bowler: v || null }))} />
                 </div>
               )}
@@ -317,7 +358,7 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
         </>
       )}
 
-      {sheet && sheet !== "wicket" && (
+      {(sheet === "wide" || sheet === "no_ball" || sheet === "bye" || sheet === "leg_bye") && (
         <ExtraSheet kind={sheet} onCancel={() => setSheet(null)} onPick={(n) => {
           if (sheet === "wide") record({ extra_type: "wide", extra_runs: 1 + n });
           else if (sheet === "no_ball") record({ extra_type: "no_ball", extra_runs: 1, runs_bat: n });
@@ -325,12 +366,53 @@ export default function ScorePad({ initial, names }: { initial: MatchBundle; nam
         }} />
       )}
       {sheet === "wicket" && striker && (
-        <WicketSheet striker={striker} nonStriker={nonStriker} fielders={bowlingTeam.player_ids} bowler={bowler} nm={nm}
+        <WicketSheet striker={striker} nonStriker={nonStriker} fielders={bowlingSquad.filter((p) => p !== striker && p !== nonStriker)} bowler={bowler} nm={nm}
           onCancel={() => setSheet(null)} onConfirm={(w) => record(w)} />
       )}
 
-      <div className="flex flex-wrap gap-2">
+      {sheet === "retire" && striker && (
+        <Sheet title="Retire a batter" onCancel={() => setSheet(null)}>
+          <p className="mb-3 text-sm muted">The batter leaves without being out, no ball is used, and they can come back later to continue their innings.</p>
+          <div className="grid gap-2">
+            {[striker, nonStriker].filter(Boolean).map((id) => (
+              <button key={id} onClick={() => record({ wicket_type: "retired", dismissed_id: id, non_delivery: true })}
+                className="h-12 rounded-xl bg-pitch-50 font-semibold text-pitch-900 active:scale-95">
+                Retire {nm(id)} ({bat(id!)?.runs ?? 0})
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+      {sheet === "overs" && (
+        <OversSheet current={bundle.match.overs} min={Math.max(1, Math.ceil(cur.legalBalls / 6))} busy={busy}
+          onCancel={() => setSheet(null)} onSave={(n) => matchAction({ action: "set_overs", overs: n }, `Match is now ${n} overs a side`)} />
+      )}
+      {sheet === "player" && (
+        <AddPlayerSheet teams={[bundle.teamA, bundle.teamB]} defaultTeam={battingTeam.id} busy={busy}
+          candidates={allPlayers.filter((p) => !bundle.teamA.player_ids.includes(p.id) && !bundle.teamB.player_ids.includes(p.id) && p.id !== common)}
+          onCancel={() => setSheet(null)}
+          onSave={(b) => matchAction({ action: "add_player", ...b }, "Player added")} />
+      )}
+      {sheet === "common" && (
+        <Sheet title="Common player" onCancel={() => setSheet(null)}>
+          <p className="mb-3 text-sm muted">The common player can bat, bowl and field for both teams in this match.</p>
+          <CommonForm current={common} busy={busy} nm={nm}
+            options={allPlayers.filter((p) => !bundle.teamA.player_ids.includes(p.id) && !bundle.teamB.player_ids.includes(p.id))}
+            onSave={(pid) => matchAction({ action: "set_common", playerId: pid }, pid ? `${nm(pid)} is the common player` : "Common player removed")} />
+        </Sheet>
+      )}
+
+      {noBattersLeft && (
+        <button onClick={endInnings} disabled={busy} className="btn w-full bg-ball py-3 text-white">All batters are out — end innings</button>
+      )}
+      {notice && <p role="status" className="rounded-lg bg-pitch-50 px-3 py-2 text-sm font-medium text-pitch-700">✓ {notice}</p>}
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <button onClick={undo} disabled={busy || (queue.length > 0 && !offline)} className="btn-ghost">↶ Undo last</button>
+        {inPlay && <button onClick={() => setSheet("retire")} disabled={!striker || !!sheet || !settled} className="btn-ghost">🚶 Retire batter</button>}
+        {(inPlay || st.phase === "break") && <button onClick={() => setSheet("player")} disabled={!settled} className="btn-ghost">➕ Add player</button>}
+        {(inPlay || st.phase === "break") && <button onClick={() => setSheet("overs")} disabled={!settled} className="btn-ghost">⏱ Overs ({bundle.match.overs})</button>}
+        {(inPlay || st.phase === "break") && <button onClick={() => setSheet("common")} disabled={!settled} className="btn-ghost">🤝 {common ? `Common: ${nm(common)}` : "Common player"}</button>}
         {inPlay && <button onClick={endInnings} disabled={busy} className="btn-ghost">End innings</button>}
       </div>
     </div>
@@ -379,7 +461,7 @@ function WicketSheet({ striker, nonStriker, fielders, bowler, nm, onConfirm, onC
   const [runs, setRuns] = useState(0);
   const [delivery, setDelivery] = useState<"legal" | "wide" | "no_ball">("legal");
   const needFielder = type === "caught" || type === "run_out" || type === "stumped";
-  const canPickBatter = type === "run_out" || type === "retired";
+  const canPickBatter = type === "run_out";
   const deliveries = type === "run_out" ? (["legal", "wide", "no_ball"] as const) : type === "stumped" ? (["legal", "wide"] as const) : (["legal"] as const);
   const ok = type && (!needFielder || fielder || type === "run_out");
   return (
@@ -387,7 +469,7 @@ function WicketSheet({ striker, nonStriker, fielders, bowler, nm, onConfirm, onC
       <div className="grid grid-cols-2 gap-2">
         {WICKETS.map((w) => (
           <button key={w.t} onClick={() => { setType(w.t); setOut(striker); setDelivery("legal"); setRuns(0); if (w.t === "caught" || w.t === "stumped") setFielder(""); }}
-            className={`h-12 rounded-xl text-sm font-bold ${type === w.t ? "bg-ball text-white" : "bg-red-50 text-red-800"} ${w.t === "retired" ? "col-span-2" : ""}`}>
+            className={`h-12 rounded-xl text-sm font-bold ${type === w.t ? "bg-ball text-white" : "bg-red-50 text-red-800"}`}>
             {w.label}
           </button>
         ))}
@@ -449,10 +531,83 @@ function WicketSheet({ striker, nonStriker, fielders, bowler, nm, onConfirm, onC
               })
             }
           >
-            Confirm: {nm(out)} {type === "retired" ? "retires" : "is out"}
+            Confirm: {nm(out)} is out
           </button>
         </div>
       )}
     </Sheet>
+  );
+}
+
+function OversSheet({ current, min, busy, onSave, onCancel }: { current: number; min: number; busy: boolean; onSave: (n: number) => void; onCancel: () => void }) {
+  const [n, setN] = useState(current);
+  return (
+    <Sheet title="Change overs" onCancel={onCancel}>
+      <p className="mb-3 text-sm muted">Overs per side for this match. Both innings use the new number; the target stays the same.</p>
+      <div className="flex items-center justify-center gap-4">
+        <button onClick={() => setN((x) => Math.max(min, x - 1))} disabled={n <= min} className="h-14 w-14 rounded-full bg-pitch-50 text-3xl font-bold text-pitch">−</button>
+        <span className="w-20 text-center font-display text-5xl font-extrabold tabular-nums" aria-live="polite">{n}</span>
+        <button onClick={() => setN((x) => Math.min(50, x + 1))} disabled={n >= 50} className="h-14 w-14 rounded-full bg-pitch-50 text-3xl font-bold text-pitch">+</button>
+      </div>
+      {min > 1 && <p className="mt-2 text-center text-xs muted">Can&apos;t go below {min} — that many overs have already been started this innings.</p>}
+      <button onClick={() => onSave(n)} disabled={busy || n === current} className="btn-primary mt-4 w-full py-3">Save — {n} overs</button>
+    </Sheet>
+  );
+}
+
+function AddPlayerSheet({ teams, defaultTeam, candidates, busy, onSave, onCancel }: {
+  teams: { id: string; name: string }[]; defaultTeam: string; candidates: { id: string; name: string }[]; busy: boolean;
+  onSave: (b: { teamId: string; playerId?: string; name?: string }) => void; onCancel: () => void;
+}) {
+  const [teamId, setTeamId] = useState(defaultTeam);
+  const [mode, setMode] = useState<"existing" | "new">(candidates.length ? "existing" : "new");
+  const [pid, setPid] = useState("");
+  const [name, setName] = useState("");
+  const ok = mode === "existing" ? !!pid : name.trim().length > 0;
+  return (
+    <Sheet title="Add a player" onCancel={onCancel}>
+      <span className="label">Join which team?</span>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        {teams.map((t) => (
+          <button key={t.id} onClick={() => setTeamId(t.id)} className={`h-11 rounded-xl text-sm font-semibold ${teamId === t.id ? "bg-pitch text-white" : "bg-pitch-50"}`}>{t.name}</button>
+        ))}
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <button onClick={() => setMode("existing")} disabled={!candidates.length} className={`h-10 rounded-xl text-sm font-semibold ${mode === "existing" ? "bg-gold text-pitch-900" : "bg-gold-100/60"}`}>From player list</button>
+        <button onClick={() => setMode("new")} className={`h-10 rounded-xl text-sm font-semibold ${mode === "new" ? "bg-gold text-pitch-900" : "bg-gold-100/60"}`}>New player</button>
+      </div>
+      {mode === "existing" ? (
+        <label className="block"><span className="label">Player</span>
+          <select className="input" value={pid} onChange={(e) => setPid(e.target.value)}>
+            <option value="">— select —</option>
+            {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      ) : (
+        <label className="block"><span className="label">New player&apos;s name</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="e.g. Rahul" />
+        </label>
+      )}
+      <button disabled={!ok || busy} onClick={() => onSave(mode === "existing" ? { teamId, playerId: pid } : { teamId, name: name.trim() })} className="btn-primary mt-4 w-full py-3">
+        {busy ? "Adding…" : "Add to team"}
+      </button>
+    </Sheet>
+  );
+}
+
+function CommonForm({ current, options, busy, nm, onSave }: {
+  current: string | null; options: { id: string; name: string }[]; busy: boolean; nm: (id: string | null) => string; onSave: (id: string | null) => void;
+}) {
+  const [pid, setPid] = useState(current ?? "");
+  return (
+    <div className="space-y-3">
+      <select className="input" value={pid} onChange={(e) => setPid(e.target.value)} aria-label="Common player">
+        <option value="">— no common player —</option>
+        {options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      <button disabled={busy || pid === (current ?? "")} onClick={() => onSave(pid || null)} className="btn-primary w-full py-3">
+        {pid ? `Make ${nm(pid)} the common player` : "Remove common player"}
+      </button>
+    </div>
   );
 }

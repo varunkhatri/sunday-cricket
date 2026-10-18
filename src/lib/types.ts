@@ -12,6 +12,11 @@ export interface MatchDay {
   date: string; // YYYY-MM-DD
   venue?: string | null;
   notes?: string | null;
+  /** Player voted Most Valuable Player of the day by the players */
+  mvp_player_id?: string | null;
+  mvp_note?: string | null;
+  /** null = automatic (locked once the day is in the past), true = locked, false = unlocked for corrections */
+  locked?: boolean | null;
   created_at: string;
 }
 
@@ -40,6 +45,8 @@ export interface Match {
   winner_team_id: ID | null;
   result_text: string | null;
   summary: string | null;
+  /** A player who plays for both teams in this match */
+  common_player_id?: string | null;
   created_at: string;
 }
 
@@ -61,6 +68,7 @@ export type WicketType =
   | "run_out"
   | "stumped"
   | "hit_wicket"
+  | "out_of_box"
   | "retired";
 
 export interface Ball {
@@ -77,6 +85,8 @@ export interface Ball {
   wicket_type: WicketType | null;
   dismissed_id: ID | null;
   fielder_id: ID | null;
+  /** true for an event that isn't a delivery (e.g. retiring a batter) — doesn't use up a ball */
+  non_delivery?: boolean;
   created_at: string;
 }
 

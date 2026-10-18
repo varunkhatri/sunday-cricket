@@ -120,6 +120,17 @@ export function buildScorecard(balls: Ball[]): Scorecard {
   let score = 0;
   let wkts = 0;
   for (const { ball: b, overIdx, legalAfter } of rows) {
+    if (b.non_delivery) {
+      // retiring a batter between balls: only affects the batting card
+      batter(b.striker_id);
+      if (b.non_striker_id) batter(b.non_striker_id);
+      if (b.wicket_type) {
+        const o = batter(b.dismissed_id ?? b.striker_id);
+        o.wicketType = b.wicket_type;
+        if (b.wicket_type === "retired") o.retired = true;
+      }
+      continue;
+    }
     const s = batter(b.striker_id);
     if (b.non_striker_id) batter(b.non_striker_id);
     // a retired batter who walks back in is no longer "retired"
@@ -197,6 +208,7 @@ export function buildScorecard(balls: Ball[]): Scorecard {
 }
 
 const WT_LABEL: Record<string, string> = {
+  out_of_box: "out of box b",
   bowled: "b",
   lbw: "lbw b",
   hit_wicket: "hit wkt b",

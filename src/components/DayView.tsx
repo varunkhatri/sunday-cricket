@@ -29,23 +29,48 @@ export default function DayView({ data, names, admin }: { data: DayFull; names: 
         <PotdCard award={o.potd} text={o.potdText} name={names[o.potd.playerId] ?? "?"} runnersUp={o.ranking.slice(1, 3)} names={names} />
       )}
 
-      {(o.topBat || o.topBowl) && (
-        <div className="grid grid-cols-2 gap-3">
-          {o.topBat && (
-            <div className="card p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🥇 Most runs</p>
-              <p className="mt-1 font-display text-lg font-bold">{names[o.topBat.playerId]}</p>
-              <p className="tabular-nums muted">{o.topBat.runs} runs ({o.topBat.balls} balls)</p>
+      {o.mvp && (
+        <section className="relative overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-card">
+          <div className="flex items-start gap-4">
+            <div className="text-5xl drop-shadow" aria-hidden>🏅</div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest text-violet-800">MVP of the Day · chosen by the players</p>
+              <Link href={`/players/${o.mvp}`} className="font-display text-2xl font-extrabold text-pitch-900 hover:underline">{names[o.mvp] ?? "?"}</Link>
             </div>
-          )}
-          {o.topBowl && (
-            <div className="card p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🎯 Most wickets</p>
-              <p className="mt-1 font-display text-lg font-bold">{names[o.topBowl.playerId]}</p>
-              <p className="tabular-nums muted">{o.topBowl.wickets} wickets ({o.topBowl.bowlRuns} runs)</p>
-            </div>
-          )}
-        </div>
+          </div>
+          <p className="mt-3 text-[15px] font-medium leading-relaxed text-pitch-900">
+            {day.mvp_note ? `“${day.mvp_note}” ` : ""}The whole squad voted, and the verdict is in — {names[o.mvp] ?? "our MVP"} was the heartbeat of the team today! 🗳️👏
+          </p>
+        </section>
+      )}
+
+      {(o.bestBat || o.bestBowl || o.bestField) && (
+        <section>
+          <h2 className="h2 mb-2">Stars of the day ⭐</h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {o.bestBat && (
+              <div className="card p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🏏 Best Batsman</p>
+                <Link href={`/players/${o.bestBat.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestBat.playerId]}</Link>
+                <p className="tabular-nums text-sm muted">{o.bestBat.runs} runs ({o.bestBat.balls} balls){o.bestBat.sixes ? ` · ${o.bestBat.sixes}×6` : ""} · {o.bestBat.batPoints} pts</p>
+              </div>
+            )}
+            {o.bestBowl && (
+              <div className="card p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🎯 Best Bowler</p>
+                <Link href={`/players/${o.bestBowl.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestBowl.playerId]}</Link>
+                <p className="tabular-nums text-sm muted">{o.bestBowl.wickets} wkt{o.bestBowl.wickets === 1 ? "" : "s"} for {o.bestBowl.bowlRuns} · {o.bestBowl.bowlPoints} pts</p>
+              </div>
+            )}
+            {o.bestField && (
+              <div className="card p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🧤 Best Fielder</p>
+                <Link href={`/players/${o.bestField.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestField.playerId]}</Link>
+                <p className="tabular-nums text-sm muted">{o.bestField.catches} dismissal{o.bestField.catches === 1 ? "" : "s"} · {o.bestField.fieldPoints} pts</p>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {teams.length >= 2 && <SeriesTable series={o.series} teams={teams} names={names} />}

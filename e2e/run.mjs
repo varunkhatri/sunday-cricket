@@ -64,9 +64,11 @@ await page.getByRole("button", { name: "Add", exact: true }).click();
 await page.getByText("Added 6 players").waitFor();
 ok(true, "bulk-added players");
 
-// new day
+// new day — today (UK time), so it isn't locked
+const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+page.on("dialog", (d) => d.accept());
 await page.goto(BASE + "/admin");
-await page.locator("input[name=date]").fill("2026-10-11");
+await page.locator("input[name=date]").fill(today);
 await page.getByRole("button", { name: "Create day" }).click();
 await page.waitForURL(/\/admin\/days\//);
 const dayUrl = page.url();
@@ -90,46 +92,88 @@ await page.locator("input[name=overs]").fill("1");
 await page.locator("input[name=players_per_side]").fill("3");
 await page.getByRole("button", { name: /Add .* go to toss/ }).click();
 await page.waitForURL(/\/score$/);
+// 1. common player chosen at the toss
+await page.locator("select[name=common_player_id]").selectOption({ label: "Varun Khatri" });
 await page.getByRole("button", { name: "Start match" }).click();
 await page.getByText("Opening bowler").waitFor();
+ok(await page.getByText("common player: Varun Khatri").isVisible(), "common player set at the toss");
 
-const sel = async (label, name) => page.locator("label", { hasText: label }).locator("select").selectOption({ label: name });
+const sel = async (label, name) => {
+  const select = page.locator("label", { hasText: label }).locator("select");
+  const value = await select.locator("option", { hasText: name }).first().getAttribute("value");
+  await select.selectOption(value);
+};
+const scoreText = () => page.locator("p.font-display.text-5xl").innerText();
 await sel("Next batter (on strike)", "Test One");
 await sel("Next batter (non-striker)", "Test Two");
 await sel("Opening bowler", "Test Four");
 await shot("08-scorer-start");
 
 const tap = async (txt) => { await page.getByRole("button", { name: txt, exact: true }).click(); await page.waitForTimeout(250); };
-const settle = () => page.waitForFunction(() => !document.body.innerText.includes("Saving…"), null, { timeout: 10000 });
+const settle = async () => { await page.waitForFunction(() => !document.body.innerText.includes("Saving…"), null, { timeout: 10000 }); await page.waitForTimeout(300); };
 await tap("1"); await settle();
 await tap("Wide"); await tap("Just wide"); await settle();
 await tap("4"); await settle();
 await tap("No ball"); await tap("+2"); await settle();
-const score1 = await page.locator("p.font-display.text-5xl").innerText();
-ok(score1.startsWith("9/0"), `score after 1, wd, 4, nb+2 is 9/0 (got ${score1})`);
+ok((await scoreText()).startsWith("9/0"), "score after 1, wd, 4, nb+2 is 9/0");
 ok((await page.getByText("0.2 / 1 ov").count()) === 1, "wide & no-ball not counted as legal balls");
+await shot("08b-scorer-extras");
 await tap("6"); await settle();
 await tap("↶ Undo last"); await settle(); await page.waitForTimeout(800);
-const score2 = await page.locator("p.font-display.text-5xl").innerText();
-ok(score2.startsWith("9/0"), `undo removed the six (got ${score2})`);
+ok((await scoreText()).startsWith("9/0"), "undo removed the six");
 await tap("OUT"); await tap("Caught");
 await page.locator("[role=dialog] select").selectOption({ label: "Test Five" });
 await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
 await sel("Next batter", "Test Three");
+
+// 2. change overs mid-innings
+await page.getByRole("button", { name: /Overs \(1\)/ }).click();
+await page.getByRole("button", { name: "+", exact: true }).click();
+await page.getByRole("button", { name: "Save — 2 overs" }).click();
+await page.getByText("0.3 / 2 ov").waitFor();
+ok(true, "overs changed from 1 to 2 during the innings");
+
+// 7. retire a batter — no ball used
+await page.getByRole("button", { name: "🚶 Retire batter" }).click();
+await page.getByRole("button", { name: /Retire Test Three/ }).click(); await settle();
+ok((await page.getByText("0.3 / 2 ov").count()) === 1 && (await scoreText()).startsWith("9/1"), "retiring a batter used no ball and wasn't a wicket");
+const retiredOpt = await page.locator("label", { hasText: "Next batter" }).locator("option", { hasText: "retired" }).count();
+ok(retiredOpt === 1, "retired batter can come back later");
+await sel("Next batter", "Varun Khatri");
+
+// 3. add a brand-new player mid-game
+await page.getByRole("button", { name: "➕ Add player" }).click();
+await page.locator("[role=dialog]").getByRole("button", { name: "Alpha" }).click();
+await page.locator("[role=dialog]").getByRole("button", { name: "New player" }).click();
+await page.locator("[role=dialog] input").fill("Late Larry");
+await page.getByRole("button", { name: "Add to team" }).click();
+await page.getByText("Player added").waitFor();
+ok(true, "new player added to Alpha mid-match");
+
 await tap("2"); await settle();
 await tap("•"); await settle();
 await shot("09-scorer-mid");
 await tap("4"); await settle();
+await sel("Bowler for the next over", "Test Five");
+// 8. out of box
+await tap("OUT"); await tap("Out of box"); await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
+await sel("Next batter", "Late Larry");
+for (let i = 0; i < 5; i++) { await tap("•"); await settle(); }
 await page.waitForTimeout(1200);
 await page.getByText("2nd innings").waitFor({ timeout: 10000 });
-ok(true, "innings 1 ended after 1 over, 2nd innings started");
+ok(true, "innings 1 ended after the new 2 overs");
 await sel("Next batter (on strike)", "Test Four");
 await sel("Next batter (non-striker)", "Test Five");
 await sel("Opening bowler", "Test One");
 await tap("6"); await settle();
 await tap("OUT"); await tap("Bowled"); await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
-await sel("Next batter", "Test Six");
+await sel("Next batter", "Varun Khatri"); // the common player bats for the other side too
 await tap("OUT"); await tap("LBW"); await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
+await sel("Next batter", "Test Six");
+await tap("OUT"); await tap("Caught");
+await page.locator("[role=dialog] select").selectOption({ label: "Test Two" });
+await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
+await page.getByRole("button", { name: /All batters are out/ }).click();
 await page.waitForTimeout(1500);
 await page.reload();
 await page.getByText(/won by/).first().waitFor({ timeout: 10000 });
@@ -137,6 +181,14 @@ const result = await page.getByText(/won by/).first().innerText();
 ok(/Alpha won by 9 runs/.test(result), `result correct: ${result}`);
 ok(await page.getByText("📰 Match report").isVisible(), "match report generated");
 await shot("10-scorer-done");
+
+// 4. MVP of the day by players' vote
+await page.goto(dayUrl);
+await page.locator("select[name=mvp_player_id]").selectOption({ label: "Test Four" });
+await page.locator("input[name=mvp_note]").fill("Brilliant captaincy and great energy");
+await page.getByRole("button", { name: "Save MVP" }).click();
+await page.getByText("MVP of the day saved").waitFor();
+ok(true, "MVP of the day saved");
 
 // photos
 await page.goto(dayUrl);
@@ -159,6 +211,28 @@ ok(fifth === 400, "5th photo rejected by server");
 await page.goto(BASE + "/");
 await page.getByText("Alpha won by 9 runs").first().waitFor();
 await shot("11-home-new-day");
+ok(await page.getByText("MVP of the Day · chosen by the players").isVisible(), "MVP card shown on the day page");
+ok(await page.getByText("🏏 Best Batsman").isVisible() && await page.getByText("🎯 Best Bowler").isVisible() && await page.getByText("🧤 Best Fielder").isVisible(), "best batsman / bowler / fielder shown");
+await page.locator("a[href^='/matches/']", { hasText: "Alpha" }).first().click();
+await page.waitForURL(/\/matches\//);
+await page.getByText("Run rate — both teams").waitFor();
+ok(true, "run rate charts shown");
+ok(await page.getByText("out of box b Test Five").isVisible(), "out of box shown in scorecard");
+await page.getByText("Run rate — both teams").scrollIntoViewIfNeeded();
+await shot("12-match-charts");
+
+// 6. previous Sundays are locked
+const days = await page.evaluate(async () => (await fetch("/api/export")).json());
+ok(Array.isArray(days.balls) && days.balls.length > 0, "backup download works");
+const oldMatch = days.matches.find((m) => days.match_days.find((d) => d.id === m.match_day_id).date < "2026-10-01");
+const locked = await page.evaluate(async (id) => {
+  const r = await fetch(`/api/matches/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo" }) });
+  return [r.status, (await r.json()).error];
+}, oldMatch.id);
+ok(locked[0] === 400 && /locked/.test(locked[1]), "scores of a previous Sunday can't be changed");
+await page.goto(BASE + `/admin/days/${oldMatch.match_day_id}`);
+ok(await page.getByText("This Sunday is locked").isVisible(), "previous Sunday shows as locked");
+await shot("13-locked-day");
 await ctx.setDefaultTimeout(5000);
 console.log(errors.length ? "Console errors:\n" + errors.join("\n") : "✓ no browser console errors");
 await browser.close();

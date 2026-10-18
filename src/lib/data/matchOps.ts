@@ -1,15 +1,36 @@
-import type { Ball, ExtraType, ID, Innings, Match, MatchBundle, WicketType } from "../types";
+import type { Ball, DayTeam, ExtraType, ID, Innings, Match, MatchBundle, MatchDay, Player, WicketType } from "../types";
 import { computeMatch } from "../cricket/engine";
+import { matchSquad } from "../cricket/stats";
+import { isDayLocked, LOCKED_MESSAGE } from "../lock";
 import { generateSummary } from "../cricket/summary";
 import { getMatchBundle, getPlayerNames } from "./queries";
 import { store } from "./store";
 
 export class ConflictError extends Error {}
+export class LockedError extends Error {
+  constructor() {
+    super(LOCKED_MESSAGE);
+  }
+}
 
-export async function startMatch(matchId: ID, tossWinnerId: ID, decision: "bat" | "bowl") {
-  const s = store();
-  const m = await s.get<Match>("matches", matchId);
+/** Refuse changes to a locked (previous) Sunday. */
+export async function assertDayEditable(dayId: ID) {
+  const day = await store().get<MatchDay>("match_days", dayId);
+  if (!day) throw new Error("Day not found");
+  if (isDayLocked(day)) throw new LockedError();
+  return day;
+}
+
+export async function assertMatchEditable(matchId: ID) {
+  const m = await store().get<Match>("matches", matchId);
   if (!m) throw new Error("Match not found");
+  await assertDayEditable(m.match_day_id);
+  return m;
+}
+
+export async function startMatch(matchId: ID, tossWinnerId: ID, decision: "bat" | "bowl", commonPlayerId: ID | null = null) {
+  const s = store();
+  const m = await assertMatchEditable(matchId);
   if (![m.team_a_id, m.team_b_id].includes(tossWinnerId)) throw new Error("Toss winner must be one of the two teams");
   const existing = await s.list<Innings>("innings", { match_id: matchId });
   if (existing.length) throw new Error("Match already started");
@@ -17,6 +38,7 @@ export async function startMatch(matchId: ID, tossWinnerId: ID, decision: "bat" 
   const bat = decision === "bat" ? tossWinnerId : other;
   const bowl = bat === m.team_a_id ? m.team_b_id : m.team_a_id;
   await s.update("matches", matchId, { toss_winner_id: tossWinnerId, toss_decision: decision, status: "live" });
+  if (commonPlayerId) await setCommonPlayer(matchId, commonPlayerId);
   await s.insert("innings", { match_id: matchId, innings_no: 1, batting_team_id: bat, bowling_team_id: bowl, closed: false });
 }
 
@@ -33,10 +55,11 @@ export interface BallInput {
   wicket_type: WicketType | null;
   dismissed_id: ID | null;
   fielder_id: ID | null;
+  non_delivery?: boolean;
 }
 
 const EXTRA: (ExtraType | null)[] = ["wide", "no_ball", "bye", "leg_bye", null];
-const WICKET: (WicketType | null)[] = ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "retired", null];
+const WICKET: (WicketType | null)[] = ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "out_of_box", "retired", null];
 const int = (v: unknown, min: number, max: number) => {
   const n = Number(v);
   if (!Number.isInteger(n) || n < min || n > max) throw new Error("Invalid number");
@@ -51,6 +74,7 @@ export async function addBall(matchId: ID, input: BallInput) {
   const bundle = await getMatchBundle(matchId);
   if (!bundle) throw new Error("Match not found");
   if (input.id && bundle.balls.some((b) => b.id === input.id)) return; // already saved (retry)
+  await assertDayEditable(bundle.match.match_day_id);
   const state = computeMatch(bundle);
   if (state.phase !== "first" && state.phase !== "second") throw new ConflictError("This innings is complete");
   const inn = currentInnings(bundle)!;
@@ -63,6 +87,9 @@ export async function addBall(matchId: ID, input: BallInput) {
   if (!WICKET.includes(input.wicket_type)) throw new Error("Bad wicket type");
   if (!input.striker_id || !input.bowler_id) throw new Error("Choose the batter and bowler");
   if (input.striker_id === input.non_striker_id) throw new Error("Striker and non-striker must be different");
+  const nonDelivery = !!input.non_delivery;
+  if (nonDelivery && (input.wicket_type !== "retired" || input.runs_bat || input.extra_runs || input.extra_type))
+    throw new Error("Only retiring a batter can be recorded without a ball");
 
   const row: Record<string, unknown> = {
     innings_id: inn.id,
@@ -78,6 +105,7 @@ export async function addBall(matchId: ID, input: BallInput) {
     dismissed_id: input.wicket_type ? input.dismissed_id || input.striker_id : null,
     fielder_id: input.wicket_type ? input.fielder_id || null : null,
   };
+  if (nonDelivery) row.non_delivery = true;
   if (input.id && /^[0-9a-f-]{36}$/i.test(input.id)) row.id = input.id;
   await store().insert("balls", row);
   await syncMatch(matchId);
@@ -88,6 +116,7 @@ export async function undoLast(matchId: ID) {
   const s = store();
   let bundle = await getMatchBundle(matchId);
   if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
   for (let guard = 0; guard < 3; guard++) {
     const inn = currentInnings(bundle!);
     if (!inn) return;
@@ -118,6 +147,7 @@ export async function undoLast(matchId: ID) {
 export async function endInnings(matchId: ID) {
   const bundle = await getMatchBundle(matchId);
   if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
   const inn = currentInnings(bundle);
   if (!inn) throw new Error("Match hasn't started");
   await store().update("innings", inn.id, { closed: true });
@@ -172,9 +202,82 @@ export async function syncMatch(matchId: ID, opts: { allowRemoveEmptySecond?: bo
 export async function regenerateSummary(matchId: ID) {
   const bundle = await getMatchBundle(matchId);
   if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
   const names = await getPlayerNames();
   const summary = generateSummary(bundle, (id) => (id ? names[id] ?? "?" : "?"), { seed: matchId + Date.now() });
   if (summary) await store().update("matches", matchId, { summary });
+}
+
+/* ---------- In-match changes ---------- */
+
+/** Change the number of overs while a match is in progress. */
+export async function setOvers(matchId: ID, overs: number) {
+  if (!Number.isInteger(overs) || overs < 1 || overs > 50) throw new Error("Overs must be 1–50");
+  const bundle = await getMatchBundle(matchId);
+  if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
+  const st = computeMatch(bundle);
+  const cur = st.phase === "second" ? st.second : st.phase === "first" ? st.first : null;
+  if (cur) {
+    const min = Math.max(1, Math.ceil(cur.legalBalls / 6));
+    if (overs < min) throw new Error(`${cur.overs} overs have already been bowled this innings, so it can't be fewer than ${min}`);
+  }
+  await store().update("matches", matchId, { overs });
+  await syncMatch(matchId);
+}
+
+/** Players-per-side must cover the biggest squad (incl. the common player) so nobody is left out. */
+async function growPlayersPerSide(matchId: ID) {
+  const bundle = await getMatchBundle(matchId);
+  if (!bundle) return;
+  const need = Math.max(matchSquad(bundle, bundle.teamA.id).length, matchSquad(bundle, bundle.teamB.id).length);
+  if (need > bundle.match.players_per_side && need <= 15) await store().update("matches", matchId, { players_per_side: need });
+}
+
+/** Pick (or clear) the player who plays for both teams in this match. */
+export async function setCommonPlayer(matchId: ID, playerId: ID | null) {
+  const bundle = await getMatchBundle(matchId);
+  if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
+  const old = bundle.match.common_player_id;
+  if (old && old !== playerId) {
+    const played = bundle.balls.some((b) => [b.striker_id, b.non_striker_id, b.bowler_id, b.fielder_id].includes(old));
+    if (played) throw new Error("The current common player has already batted, bowled or fielded, so they can't be removed");
+  }
+  if (playerId) {
+    const p = await store().get<Player>("players", playerId);
+    if (!p) throw new Error("Player not found");
+    if (bundle.teamA.player_ids.includes(playerId) || bundle.teamB.player_ids.includes(playerId))
+      throw new Error(`${p.name} is already in one of the teams — the common player must be someone else`);
+  }
+  await store().update("matches", matchId, { common_player_id: playerId });
+  if (playerId) await growPlayersPerSide(matchId);
+}
+
+/** Add a player (existing or brand new) to one of the teams while the match is in progress. */
+export async function addPlayerToTeam(matchId: ID, teamId: ID, opts: { playerId?: ID; name?: string }) {
+  const s = store();
+  const bundle = await getMatchBundle(matchId);
+  if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
+  const team = [bundle.teamA, bundle.teamB].find((t) => t.id === teamId);
+  if (!team) throw new Error("Pick one of the two teams");
+
+  let playerId = opts.playerId;
+  if (!playerId) {
+    const name = (opts.name ?? "").trim();
+    if (!name || name.length > 40) throw new Error("Type the new player's name");
+    const all = await s.list<Player>("players");
+    const existing = all.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    playerId = existing ? existing.id : (await s.insert<Player>("players", { name })).id;
+  }
+  if (playerId === bundle.match.common_player_id) throw new Error("That's the common player — they already play for both teams");
+  const dayTeams = await s.list<DayTeam>("day_teams", { match_day_id: bundle.match.match_day_id });
+  const clash = dayTeams.find((t) => t.player_ids.includes(playerId!));
+  if (clash) throw new Error(clash.id === team.id ? "Already in this team" : `Already playing for ${clash.name} today`);
+  await s.update("day_teams", team.id, { player_ids: [...team.player_ids, playerId] });
+  await growPlayersPerSide(matchId);
+  return playerId;
 }
 
 /** Delete a whole day and everything in it (works for both stores). */
