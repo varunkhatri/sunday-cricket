@@ -23,7 +23,7 @@ export default async function ScorePage({ params }: { params: { id: string } }) 
       <div>
         <Link href={`/admin/days/${match.match_day_id}`} className="text-sm font-semibold text-pitch hover:underline">← Back to the day</Link>
         <h1 className="h1 mt-1">Match {match.match_no}: {teamA.name} vs {teamB.name}</h1>
-        <p className="muted">{match.overs} overs · {match.players_per_side} a side{match.common_player_id ? ` · common player: ${names[match.common_player_id]}` : ""}</p>
+        <p className="muted">{match.overs} overs · {match.players_per_side} a side{match.common_player_id ? ` · common player: ${names[match.common_player_id]}` : ""}{match.last_man_stands ? " · last batter can bat alone" : ""}</p>
       </div>
 
       {locked && (
@@ -101,6 +101,10 @@ export default async function ScorePage({ params }: { params: { id: string } }) 
           <input type="hidden" name="id" value={match.id} />
           <label><span className="label">Overs</span><input type="number" name="overs" min={1} max={50} defaultValue={match.overs} className="input" /></label>
           <label><span className="label">Players a side</span><input type="number" name="players_per_side" min={2} max={15} defaultValue={match.players_per_side} className="input" /></label>
+          <label className="col-span-2 flex items-center gap-2 text-sm sm:col-span-3">
+            <input type="checkbox" name="last_man_stands" defaultChecked={!!match.last_man_stands} className="h-4 w-4 accent-pitch" />
+            Last batter can bat alone until the end of the innings
+          </label>
           <Submit className="btn-ghost">Save</Submit>
         </ActionForm>
         <p className="mt-2 text-xs muted">Handy if you agree to shorten a match because of time or rain.</p>

@@ -97,6 +97,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
               </label>
               <label><span className="label">Overs</span><input type="number" name="overs" min={1} max={50} defaultValue={last?.overs ?? 6} className="input" /></label>
               <label><span className="label">Players a side</span><input type="number" name="players_per_side" min={2} max={15} defaultValue={defaultPps} className="input" /></label>
+              <label className="col-span-2 flex items-center gap-2 text-sm sm:col-span-5">
+                <input type="checkbox" name="last_man_stands" defaultChecked={last ? !!last.last_man_stands : true} className="h-4 w-4 accent-pitch" />
+                Last batter can bat alone until the end of the innings (no strike change)
+              </label>
               <Submit className="btn-primary col-span-2 sm:col-span-1">Add &amp; go to toss</Submit>
             </ActionForm>
           </div>

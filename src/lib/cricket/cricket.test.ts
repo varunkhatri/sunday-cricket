@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Ball, DayTeam, Innings, Match, MatchBundle } from "../types";
-import { computeInnings, computeMatch } from "./engine";
+import { computeInnings, computeMatch, rulesFor } from "./engine";
 import { buildScorecard, dismissalText } from "./scorecard";
 import { aggregateCaptains, aggregatePlayers, computeSeries, matchPerformances, rankDay } from "./stats";
 import { generateSummary, potdMessage } from "./summary";
@@ -307,5 +307,31 @@ describe("run rate series", () => {
     const [s1, s2] = runRateSeries(b);
     expect(s1.points[0]).toMatchObject({ over: 1, runs: 10, runRate: 10, partial: false });
     expect(s2.points[0]).toMatchObject({ runs: 3, partial: true, runRate: 6 });
+  });
+});
+
+describe("last batter bats alone", () => {
+  const lms = { maxOvers: 2, maxWickets: 3, lastManStands: true };
+  it("lone batter keeps strike on singles and at the end of the over", () => {
+    const alone = (r: number) => ball({ striker_id: "A3", non_striker_id: null, runs_bat: r });
+    let s = computeInnings([alone(1)], lms);
+    expect(s.striker).toBe("A3");
+    s = computeInnings([alone(1), alone(3), alone(0), alone(1), alone(0), alone(1)], lms);
+    expect(s.overJustCompleted).toBe(true);
+    expect(s.striker).toBe("A3");
+    expect(s.complete).toBe(false);
+  });
+  it("innings only ends when every player is out", () => {
+    const b = [
+      ball({ wicket_type: "bowled", dismissed_id: "A1" }),
+      ball({ striker_id: "A3", wicket_type: "bowled", dismissed_id: "A3" }),
+    ];
+    expect(computeInnings(b, lms).complete).toBe(false); // A2 can carry on alone
+    expect(computeInnings([...b, ball({ striker_id: "A2", non_striker_id: null, wicket_type: "lbw", dismissed_id: "A2" })], lms).completeReason).toBe("all_out");
+  });
+  it("old matches (setting off) keep the old rule", () => {
+    const m = mkBundle("l1", [1], []);
+    expect(rulesFor(m.match).maxWickets).toBe(3);
+    expect(rulesFor({ ...m.match, last_man_stands: true }).maxWickets).toBe(4);
   });
 });

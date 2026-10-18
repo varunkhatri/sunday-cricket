@@ -188,6 +188,7 @@ export async function createMatch(_: ActionState, fd: FormData): Promise<ActionS
       team_b_id: b,
       overs,
       players_per_side: pps,
+      last_man_stands: fd.get("last_man_stands") === "on",
       status: "setup",
     });
     id = m.id;
@@ -206,7 +207,7 @@ export async function updateMatchSettings(_: ActionState, fd: FormData): Promise
     if (!Number.isInteger(overs) || overs < 1 || overs > 50) return { error: "Overs must be 1–50" };
     if (!Number.isInteger(pps) || pps < 2 || pps > 15) return { error: "Players per side must be 2–15" };
     await assertMatchEditable(str(fd, "id"));
-    await store().update("matches", str(fd, "id"), { players_per_side: pps });
+    await store().update("matches", str(fd, "id"), { players_per_side: pps, last_man_stands: fd.get("last_man_stands") === "on" });
     await setOvers(str(fd, "id"), overs); // validates against overs already bowled, then re-syncs
     revalidatePath("/", "layout");
     return { ok: "Saved" };

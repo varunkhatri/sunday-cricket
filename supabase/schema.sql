@@ -45,6 +45,7 @@ create table if not exists matches (
   result_text text,
   summary text,
   common_player_id uuid references players(id) on delete set null,
+  last_man_stands boolean not null default false,
   created_at timestamptz not null default now()
 );
 

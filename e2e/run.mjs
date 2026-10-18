@@ -173,12 +173,20 @@ await sel("Next batter", "Test Six");
 await tap("OUT"); await tap("Caught");
 await page.locator("[role=dialog] select").selectOption({ label: "Test Two" });
 await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
+// last batter carries on alone and keeps the strike
+await page.getByText("Last batter standing — Test Five").waitFor();
+ok(true, "last batter continues alone");
+await tap("1"); await settle();
+await page.getByText("Last batter standing — Test Five").waitFor();
+ok(true, "lone batter keeps the strike after a single");
+await shot("09c-batting-alone");
+await tap("OUT"); await tap("Bowled"); await page.getByRole("button", { name: /Confirm/ }).click(); await settle();
 await page.getByRole("button", { name: /All batters are out/ }).click();
 await page.waitForTimeout(1500);
 await page.reload();
 await page.getByText(/won by/).first().waitFor({ timeout: 10000 });
 const result = await page.getByText(/won by/).first().innerText();
-ok(/Alpha won by 9 runs/.test(result), `result correct: ${result}`);
+ok(/Alpha won by 8 runs/.test(result), `result correct: ${result}`);
 ok(await page.getByText("📰 Match report").isVisible(), "match report generated");
 await shot("10-scorer-done");
 
@@ -209,10 +217,12 @@ ok(fifth === 400, "5th photo rejected by server");
 
 // public day page
 await page.goto(BASE + "/");
-await page.getByText("Alpha won by 9 runs").first().waitFor();
+await page.getByText("Alpha won by 8 runs").first().waitFor();
 await shot("11-home-new-day");
 ok(await page.getByText("MVP of the Day · chosen by the players").isVisible(), "MVP card shown on the day page");
-ok(await page.getByText("🏏 Best Batsman").isVisible() && await page.getByText("🎯 Best Bowler").isVisible() && await page.getByText("🧤 Best Fielder").isVisible(), "best batsman / bowler / fielder shown");
+ok(await page.getByText("Best Batsman of the Day").isVisible() && await page.getByText("Best Bowler of the Day").isVisible() && await page.getByText("Best Fielder of the Day").isVisible(), "best batsman / bowler / fielder cards shown");
+await page.getByText("Stars of the day").scrollIntoViewIfNeeded();
+await shot("11b-stars");
 await page.locator("a[href^='/matches/']", { hasText: "Alpha" }).first().click();
 await page.waitForURL(/\/matches\//);
 await page.getByText("Run rate — both teams").waitFor();

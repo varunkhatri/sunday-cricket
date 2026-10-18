@@ -286,3 +286,45 @@ export function potdMessage(
   const r = rng(playerId + name);
   return fill(POTD_LINES[Math.floor(r() * POTD_LINES.length)], { name, detail });
 }
+
+/* ---------- Best Batsman / Bowler / Fielder messages ---------- */
+
+const AWARD_LINES: Record<"bat" | "bowl" | "field", string[]> = {
+  bat: [
+    "🏏 {name} owned the crease today — {detail}. Bowlers will be having nightmares about this one! 🔥",
+    "🏏 What a knock-out day for {name}: {detail}. Pure timing, pure class — keep swinging, champ!",
+    "🏏 {name} made batting look easy — {detail}. That's the standard for next Sunday! 👏",
+  ],
+  bowl: [
+    "🎯 {name} was on fire with the ball — {detail}. Batters simply had no answer! 🔥",
+    "🎯 Lethal stuff from {name}: {detail}. Line, length and a whole lot of heart! 💪",
+    "🎯 {name} ran through them today — {detail}. A spell the group chat won't forget! 👏",
+  ],
+  field: [
+    "🧤 Safe hands of the day: {name} — {detail}. Nothing got past today! 🙌",
+    "🧤 {name} was everywhere in the field — {detail}. Catches win matches, and today proved it! 💪",
+    "🧤 Electric in the field, {name} — {detail}. The unsung hero of the day! 👏",
+  ],
+};
+
+export function awardMessage(
+  kind: "bat" | "bowl" | "field",
+  seed: string,
+  name: string,
+  a: { runs: number; balls: number; fours: number; sixes: number; wickets: number; bowlRuns: number; catches: number },
+) {
+  let detail: string;
+  if (kind === "bat") {
+    const bits = [`${a.runs} run${a.runs === 1 ? "" : "s"} off ${a.balls} ball${a.balls === 1 ? "" : "s"}`];
+    if (a.fours) bits.push(`${a.fours} four${a.fours === 1 ? "" : "s"}`);
+    if (a.sixes) bits.push(`${a.sixes} six${a.sixes === 1 ? "" : "es"}`);
+    detail = bits.join(", ");
+  } else if (kind === "bowl") {
+    detail = `${a.wickets} wicket${a.wickets === 1 ? "" : "s"} for just ${a.bowlRuns} run${a.bowlRuns === 1 ? "" : "s"}`;
+  } else {
+    detail = `${a.catches} dismissal${a.catches === 1 ? "" : "s"} in the field`;
+  }
+  const lines = AWARD_LINES[kind];
+  const r = rng(seed + kind);
+  return fill(lines[Math.floor(r() * lines.length)], { name, detail });
+}

@@ -8,6 +8,8 @@ import PhotoGrid from "./PhotoGrid";
 import PotdCard from "./PotdCard";
 import SeriesTable from "./SeriesTable";
 import Summary from "./Summary";
+import AwardCard from "./AwardCard";
+import { awardMessage } from "@/lib/cricket/summary";
 
 export default function DayView({ data, names, admin }: { data: DayFull; names: Record<string, string>; admin: boolean }) {
   const o = dayOverview(data, names);
@@ -45,29 +47,23 @@ export default function DayView({ data, names, admin }: { data: DayFull; names: 
       )}
 
       {(o.bestBat || o.bestBowl || o.bestField) && (
-        <section>
-          <h2 className="h2 mb-2">Stars of the day ⭐</h2>
-          <div className="grid gap-3 sm:grid-cols-3">
+        <section className="space-y-3">
+          <h2 className="h2">Stars of the day ⭐</h2>
+          <div className="grid gap-3 md:grid-cols-3">
             {o.bestBat && (
-              <div className="card p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🏏 Best Batsman</p>
-                <Link href={`/players/${o.bestBat.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestBat.playerId]}</Link>
-                <p className="tabular-nums text-sm muted">{o.bestBat.runs} runs ({o.bestBat.balls} balls){o.bestBat.sixes ? ` · ${o.bestBat.sixes}×6` : ""} · {o.bestBat.batPoints} pts</p>
-              </div>
+              <AwardCard kind="bat" playerId={o.bestBat.playerId} name={names[o.bestBat.playerId] ?? "?"} points={o.bestBat.batPoints}
+                stat={`${o.bestBat.runs} runs (${o.bestBat.balls} balls)`}
+                text={awardMessage("bat", day.id, names[o.bestBat.playerId] ?? "?", o.bestBat)} />
             )}
             {o.bestBowl && (
-              <div className="card p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🎯 Best Bowler</p>
-                <Link href={`/players/${o.bestBowl.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestBowl.playerId]}</Link>
-                <p className="tabular-nums text-sm muted">{o.bestBowl.wickets} wkt{o.bestBowl.wickets === 1 ? "" : "s"} for {o.bestBowl.bowlRuns} · {o.bestBowl.bowlPoints} pts</p>
-              </div>
+              <AwardCard kind="bowl" playerId={o.bestBowl.playerId} name={names[o.bestBowl.playerId] ?? "?"} points={o.bestBowl.bowlPoints}
+                stat={`${o.bestBowl.wickets}/${o.bestBowl.bowlRuns}`}
+                text={awardMessage("bowl", day.id, names[o.bestBowl.playerId] ?? "?", o.bestBowl)} />
             )}
             {o.bestField && (
-              <div className="card p-4">
-                <p className="text-xs font-bold uppercase tracking-wider text-ink/50">🧤 Best Fielder</p>
-                <Link href={`/players/${o.bestField.playerId}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[o.bestField.playerId]}</Link>
-                <p className="tabular-nums text-sm muted">{o.bestField.catches} dismissal{o.bestField.catches === 1 ? "" : "s"} · {o.bestField.fieldPoints} pts</p>
-              </div>
+              <AwardCard kind="field" playerId={o.bestField.playerId} name={names[o.bestField.playerId] ?? "?"} points={o.bestField.fieldPoints}
+                stat={`${o.bestField.catches} dismissal${o.bestField.catches === 1 ? "" : "s"}`}
+                text={awardMessage("field", day.id, names[o.bestField.playerId] ?? "?", o.bestField)} />
             )}
           </div>
         </section>

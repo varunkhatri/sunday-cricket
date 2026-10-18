@@ -72,7 +72,9 @@ export function ballSymbol(b: Ball): string {
 
 export interface InningsRules {
   maxOvers: number;
-  maxWickets: number; // players_per_side - 1
+  maxWickets: number; // players_per_side - 1 (or players_per_side when the last batter can bat alone)
+  /** last batter may continue alone: no strike changes while there's no non-striker */
+  lastManStands?: boolean;
   target?: number | null; // runs needed to win (2nd innings)
   closed?: boolean;
 }
@@ -149,7 +151,9 @@ export function computeInnings(balls: Ball[], rules: InningsRules): InningsState
 
     let s: ID | null = b.striker_id;
     let ns: ID | null = b.non_striker_id;
-    if (runsRun(b) % 2 === 1) [s, ns] = [ns, s];
+    // batting alone: the lone batter keeps the strike whatever the runs / over end
+    const alone = !!rules.lastManStands && !b.non_striker_id;
+    if (!alone && runsRun(b) % 2 === 1) [s, ns] = [ns, s];
 
     if (b.wicket_type) {
       const out = b.dismissed_id ?? b.striker_id;
@@ -165,7 +169,7 @@ export function computeInnings(balls: Ball[], rules: InningsRules): InningsState
     if (isLegal(b)) {
       legal++;
       if (legal % 6 === 0) {
-        [s, ns] = [ns, s];
+        if (!alone || !s) [s, ns] = [ns, s];
         overJustCompleted = true;
       }
     }
@@ -234,7 +238,13 @@ export function battingFirst(match: Match): ID | null {
 }
 
 export function rulesFor(match: Match) {
-  return { maxOvers: match.overs, maxWickets: Math.max(1, match.players_per_side - 1) };
+  const lms = !!match.last_man_stands;
+  return {
+    maxOvers: match.overs,
+    // with "last man stands" everyone has to be out, otherwise one fewer (the last batter has no partner)
+    maxWickets: Math.max(1, lms ? match.players_per_side : match.players_per_side - 1),
+    lastManStands: lms,
+  };
 }
 
 export function teamName(bundle: MatchBundle, id: ID | null) {

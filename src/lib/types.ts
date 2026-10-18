@@ -47,6 +47,8 @@ export interface Match {
   summary: string | null;
   /** A player who plays for both teams in this match */
   common_player_id?: string | null;
+  /** The last batter can carry on alone until the innings ends */
+  last_man_stands?: boolean;
   created_at: string;
 }
 

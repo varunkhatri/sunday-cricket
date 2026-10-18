@@ -128,8 +128,9 @@ export default function ScorePad({ initial, names: initialNames, allPlayers }: {
   const battingTeam = inn?.batting_team_id === bundle.teamA.id ? bundle.teamA : bundle.teamB;
   const bowlingTeam = inn?.batting_team_id === bundle.teamA.id ? bundle.teamB : bundle.teamA;
 
-  const striker = override.striker !== undefined ? override.striker : cur?.striker ?? null;
-  const nonStriker = override.nonStriker !== undefined ? override.nonStriker : cur?.nonStriker ?? null;
+  let striker = override.striker !== undefined ? override.striker : cur?.striker ?? null;
+  let nonStriker = override.nonStriker !== undefined ? override.nonStriker : cur?.nonStriker ?? null;
+  const lastManStands = !!bundle.match.last_man_stands;
   const autoBowler = cur && innBalls.length && !cur.overJustCompleted ? cur.lastBowler : null;
   const bowler = override.bowler !== undefined ? override.bowler : autoBowler;
   const prevOverBowler = cur?.overJustCompleted ? cur.lastBowler : null;
@@ -139,6 +140,12 @@ export default function ScorePad({ initial, names: initialNames, allPlayers }: {
   const common = bundle.match.common_player_id ?? null;
   const dismissed = cur?.dismissed ?? new Set<string>();
   const available = battingSquad.filter((p) => !dismissed.has(p) && p !== striker && p !== nonStriker);
+  // last man stands: when nobody is left to come in, the remaining batter carries on alone, on strike
+  if (lastManStands && available.length === 0 && !striker && nonStriker) {
+    striker = nonStriker;
+    nonStriker = null;
+  }
+  const battingAlone = lastManStands && !!striker && !nonStriker && available.length === 0;
   const retiredIds = new Set(sc.batting.filter((r) => r.retired).map((r) => r.playerId));
   const nm = (id: string | null | undefined) => (id ? names[id] ?? "?" : "—");
   const bat = (id: string | null) => sc.batting.find((r) => r.playerId === id);
@@ -148,7 +155,7 @@ export default function ScorePad({ initial, names: initialNames, allPlayers }: {
   const needNonStriker = !nonStriker && available.length > 0;
   const ready = inPlay && !!striker && !!bowler && !needNonStriker && !sheet;
   const settled = queue.length === 0 && !busy;
-  const noBattersLeft = inPlay && !striker && available.length === 0;
+  const noBattersLeft = inPlay && !striker && available.length === 0 && (!lastManStands || !nonStriker);
 
   /* ---------- actions ---------- */
   function record(p: { runs_bat?: number; extra_type?: ExtraType | null; extra_runs?: number; wicket_type?: WicketType | null; dismissed_id?: string | null; fielder_id?: string | null; non_delivery?: boolean }) {
@@ -293,9 +300,12 @@ export default function ScorePad({ initial, names: initialNames, allPlayers }: {
 
       {inPlay && (
         <>
+          {battingAlone && (
+            <p className="rounded-xl bg-gold-100 px-3 py-2 text-sm font-semibold text-pitch-900">🧍 Last batter standing — {nm(striker)} bats alone and keeps the strike.</p>
+          )}
           {/* Crease */}
           <section className="card divide-y divide-black/5">
-            {[{ id: striker, on: true }, { id: nonStriker, on: false }].map(({ id, on }) => (
+            {[{ id: striker, on: true }, { id: nonStriker, on: false }].filter((x) => x.on || !battingAlone).map(({ id, on }) => (
               <div key={on ? "s" : "n"} className="flex items-center justify-between gap-2 p-3">
                 {id ? (
                   <>
