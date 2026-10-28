@@ -3,9 +3,12 @@ import { notFound } from "next/navigation";
 import ActionForm, { ConfirmButton, Submit } from "@/components/ActionForm";
 import ScorePad from "@/components/admin/ScorePad";
 import Summary from "@/components/Summary";
-import { deleteMatch, regenerateSummaryAction, saveSummary, startMatchAction, updateMatchSettings } from "../../../actions";
+import { deleteMatch, regenerateSummaryAction, saveSummary, setMatchPlayersAction, startMatchAction, updateMatchSettings } from "../../../actions";
 import { getDay, getMatchBundle, getPlayerNames, getPlayers } from "@/lib/data/queries";
-import { isDayLocked } from "@/lib/lock";
+import { canEditDay, isPastForStaff } from "@/lib/lock";
+import { currentRole } from "@/lib/auth";
+import { store } from "@/lib/data/store";
+import type { DayTeam } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +17,14 @@ export default async function ScorePage({ params }: { params: { id: string } }) 
   if (!bundle) notFound();
   const { match, teamA, teamB } = bundle;
   const day = await getDay(match.match_day_id);
-  const locked = day ? isDayLocked(day) : false;
+  const role = currentRole();
+  const locked = day ? !canEditDay(day, role) : false;
+  const staffPast = role === "staff" && !!day && isPastForStaff(day);
+  const [dayTeamA, dayTeamB] = await Promise.all([
+    store().get<DayTeam>("day_teams", match.team_a_id),
+    store().get<DayTeam>("day_teams", match.team_b_id),
+  ]);
+  const squadOptions = (dayTeam: DayTeam | null, current: string[]) => [...new Set([...current, ...(dayTeam?.player_ids ?? [])])];
   const commonOptions = players.filter((p) => !teamA.player_ids.includes(p.id) && !teamB.player_ids.includes(p.id));
   const started = bundle.innings.length > 0;
 
@@ -28,8 +38,14 @@ export default async function ScorePage({ params }: { params: { id: string } }) 
 
       {locked && (
         <p className="card border-amber-300 bg-amber-50 p-4 text-sm">
-          🔒 This match is from a locked Sunday, so its scores are kept exactly as they were. To correct something, unlock the day on the{" "}
-          <Link href={`/admin/days/${match.match_day_id}`} className="font-semibold underline">day page</Link>.
+          {staffPast ? (
+            <>🔒 This match is from a previous Sunday. Only the super admin can change it.</>
+          ) : (
+            <>
+              🔒 This match is from a locked Sunday, so its scores are kept exactly as they were. To correct something, unlock the day on the{" "}
+              <Link href={`/admin/days/${match.match_day_id}`} className="font-semibold underline">day page</Link>.
+            </>
+          )}
         </p>
       )}
 
@@ -93,6 +109,32 @@ export default async function ScorePage({ params }: { params: { id: string } }) 
             </ActionForm>
           </details></>}
         </section>
+      )}
+
+      {!locked && started && (
+        <details className="card p-4">
+          <summary className="cursor-pointer font-semibold text-pitch">👥 Who played this match</summary>
+          <p className="mt-2 text-sm muted">Untick anyone who wasn&apos;t there for this match (e.g. they only arrived for a later one) so their match count is right. Players who batted, bowled or fielded can&apos;t be removed.</p>
+          <ActionForm action={setMatchPlayersAction} className="mt-3 space-y-3">
+            <input type="hidden" name="id" value={match.id} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([[teamA, dayTeamA, "team_a_players"], [teamB, dayTeamB, "team_b_players"]] as const).map(([t, dt, field]) => (
+                <fieldset key={t.id}>
+                  <legend className="label">{t.name}</legend>
+                  <div className="grid gap-1.5">
+                    {squadOptions(dt, t.player_ids).map((pid) => (
+                      <label key={pid} className="flex items-center gap-2 rounded-lg border border-black/10 px-2.5 py-2 text-sm has-[:checked]:border-pitch has-[:checked]:bg-pitch-50">
+                        <input type="checkbox" name={field} value={pid} defaultChecked={t.player_ids.includes(pid)} className="accent-pitch" />
+                        {names[pid] ?? "?"}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+            <Submit className="btn-ghost">Save who played</Submit>
+          </ActionForm>
+        </details>
       )}
 
       {!locked && <details className="card p-4">

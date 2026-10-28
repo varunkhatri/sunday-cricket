@@ -5,7 +5,8 @@ import MatchCard from "@/components/MatchCard";
 import PhotoUploader from "@/components/admin/PhotoUploader";
 import TeamEditor from "@/components/admin/TeamEditor";
 import { createMatch, deleteDay, deletePhoto, deleteTeam, movePhoto, setDayLock, setMvp, updateDay, updatePhoto } from "../../actions";
-import { isDayLocked, londonToday } from "@/lib/lock";
+import { canEditDay, isPastForStaff, londonToday } from "@/lib/lock";
+import { currentRole } from "@/lib/auth";
 import { dayOverview } from "@/lib/dayView";
 import { getDayFull, getPlayers } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
@@ -20,10 +21,16 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
   const takenBy: Record<string, string> = {};
   for (const t of teams) for (const p of t.player_ids) takenBy[p] = t.id;
   const last = bundles[bundles.length - 1]?.match;
-  const locked = isDayLocked(day);
+  const role = currentRole();
+  const isSuper = role === "super";
+  const locked = !canEditDay(day, role);
   const isPast = day.date < londonToday();
+  const staffPast = role === "staff" && isPastForStaff(day);
   const ov = dayOverview(data, names);
-  const playedIds = [...new Set([...teams.flatMap((t) => t.player_ids), ...bundles.map((b) => b.match.common_player_id).filter(Boolean) as string[]])];
+  const playedIds = [...new Set([
+    ...(bundles.length ? bundles.flatMap((b) => [...b.teamA.player_ids, ...b.teamB.player_ids]) : teams.flatMap((t) => t.player_ids)),
+    ...bundles.map((b) => b.match.common_player_id).filter(Boolean) as string[],
+  ])];
   const defaultPps = last?.players_per_side ?? (teams.length >= 2 ? Math.min(teams[0].player_ids.length, teams[1].player_ids.length) : 6);
 
   return (
@@ -34,7 +41,11 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
         <Link href={`/days/${day.id}`} className="btn-ghost text-sm">View public page</Link>
       </div>
 
-      {locked ? (
+      {staffPast ? (
+        <section className="card border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm"><b>🔒 Previous Sunday — view only.</b> Only the super admin can change its scores, teams, matches or MVP. You can still add photos.</p>
+        </section>
+      ) : locked && isSuper ? (
         <section className="card flex flex-wrap items-center justify-between gap-3 border-amber-300 bg-amber-50 p-4">
           <p className="text-sm">
             <b>🔒 This Sunday is locked</b> so its scores, teams and matches can&apos;t be changed by accident.
@@ -46,7 +57,11 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
             <ConfirmButton className="btn-ghost text-sm" message="Unlock this Sunday so you can correct its scores? Remember to lock it again afterwards.">Unlock for corrections</ConfirmButton>
           </form>
         </section>
-      ) : isPast ? (
+      ) : locked ? (
+        <section className="card border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm"><b>🔒 This Sunday is locked.</b> Only the super admin can unlock it.</p>
+        </section>
+      ) : isPast && isSuper ? (
         <section className="card flex flex-wrap items-center justify-between gap-3 border-amber-300 bg-amber-50 p-4">
           <p className="text-sm"><b>🔓 Unlocked for corrections.</b> Lock it again when you&apos;re done.</p>
           <form action={setDayLock}>
@@ -58,7 +73,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
       ) : null}
 
       {/* MVP vote */}
-      {playedIds.length > 0 && (
+      {playedIds.length > 0 && !staffPast && (
         <section className="card p-4">
           <h2 className="h2">🗳️ MVP of the day — players&apos; vote</h2>
           <p className="text-sm muted">Ask everyone who played to nominate a player, then pick the winner here. This is separate from the points-based Player of the Day{ov.potd ? ` (currently ${names[ov.potd.playerId]})` : ""}.</p>
@@ -148,7 +163,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
                 <div className="flex gap-2">
                   {i > 0 && <form action={movePhoto}><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="up" /><button className="btn-ghost text-sm">↑ Earlier</button></form>}
                   {i < photos.length - 1 && <form action={movePhoto}><input type="hidden" name="id" value={p.id} /><input type="hidden" name="dir" value="down" /><button className="btn-ghost text-sm">↓ Later</button></form>}
-                  <form action={deletePhoto} className="ml-auto"><input type="hidden" name="id" value={p.id} /><ConfirmButton message="Delete this photo?" className="btn-danger text-sm">Delete</ConfirmButton></form>
+                  {!staffPast && <form action={deletePhoto} className="ml-auto"><input type="hidden" name="id" value={p.id} /><ConfirmButton message="Delete this photo?" className="btn-danger text-sm">Delete</ConfirmButton></form>}
                 </div>
               </div>
             </div>

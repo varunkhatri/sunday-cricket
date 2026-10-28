@@ -228,7 +228,7 @@ describe("series, stats, captains, POTD", () => {
 });
 
 /* ---------- October update ---------- */
-import { matchSquad, pointsBreakdown } from "./stats";
+import { matchSquad, pointsBreakdown, pointsFor, POINTS_ORIGINAL, POINTS_NOV_2026 } from "./stats";
 import { runRateSeries } from "./runrate";
 
 describe("retire batter (no ball used)", () => {
@@ -277,7 +277,7 @@ describe("common player & points", () => {
   });
   it("batting + bowling + fielding + win = the same total as before", () => {
     const p = { runs: 34, fours: 3, sixes: 2, wickets: 3, maidens: 1, catches: 1, runOuts: 1, stumpings: 0, won: true } as Parameters<typeof pointsBreakdown>[0];
-    const b = pointsBreakdown(p);
+    const b = pointsBreakdown(p, POINTS_ORIGINAL);
     const old = 34 + 3 + 4 + 3 * 20 + 10 + 2 * 8 + 10 + 0 + 10 + 5;
     expect(b.total).toBe(old);
     expect(b.bat + b.bowl + b.field + b.win).toBe(old);
@@ -333,5 +333,28 @@ describe("last batter bats alone", () => {
     const m = mkBundle("l1", [1], []);
     expect(rulesFor(m.match).maxWickets).toBe(3);
     expect(rulesFor({ ...m.match, last_man_stands: true }).maxWickets).toBe(4);
+  });
+});
+
+describe("points rules by date", () => {
+  it("old Sundays keep the original points, new ones use the November 2026 points", () => {
+    expect(pointsFor("2026-10-25")).toBe(POINTS_ORIGINAL);
+    expect(pointsFor("2026-11-01")).toBe(POINTS_NOV_2026);
+    const p = { runs: 34, fours: 3, sixes: 2, wickets: 3, maidens: 1, catches: 1, runOuts: 1, stumpings: 0, won: true } as Parameters<typeof pointsBreakdown>[0];
+    // 34 + 3 + 4 + 10 (30+) | 3×15 + 15 + 10 (3-for) | 2×5 | +5
+    expect(pointsBreakdown(p, POINTS_NOV_2026)).toMatchObject({ bat: 51, bowl: 70, field: 10, win: 5, total: 136 });
+  });
+  it("a match's date decides its points", () => {
+    const b = mkBundle("p1", [0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]); // runs conceded, so no maiden
+    b.balls.push({ ...ball({ inn: "p1i2", striker_id: "B1", bowler_id: "A3", wicket_type: "bowled", dismissed_id: "B1" }), match_id: "p1" });
+    const wk = (date: string) => matchPerformances({ ...b, date }).find((x) => x.playerId === "A3")!.bowlPoints;
+    expect(wk("2026-10-18")).toBe(20);
+    expect(wk("2026-11-01")).toBe(15);
+  });
+  it("only players in the match's own line-up are counted as playing", () => {
+    const b = mkBundle("s9", [1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]);
+    const narrowed = { ...b, teamA: { ...b.teamA, player_ids: ["A1", "A2", "A3"] } }; // A4 arrived later in the day
+    expect(matchPerformances(narrowed).some((x) => x.playerId === "A4")).toBe(false);
+    expect(matchPerformances(b).some((x) => x.playerId === "A4")).toBe(true);
   });
 });

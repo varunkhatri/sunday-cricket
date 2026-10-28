@@ -243,6 +243,53 @@ ok(locked[0] === 400 && /locked/.test(locked[1]), "scores of a previous Sunday c
 await page.goto(BASE + `/admin/days/${oldMatch.match_day_id}`);
 ok(await page.getByText("This Sunday is locked").isVisible(), "previous Sunday shows as locked");
 await shot("13-locked-day");
+ok(await page.getByRole("button", { name: "Unlock for corrections" }).isVisible(), "super admin can unlock a previous Sunday");
+
+// match counts: someone added to a team AFTER match 1 must not count as having played it
+await page.goto(BASE + "/admin/players");
+await page.locator("textarea[name=names]").fill("Newbie Nick");
+await page.getByRole("button", { name: "Add", exact: true }).click();
+await page.getByText("Added 1 player").waitFor();
+await page.goto(dayUrl);
+await page.locator("summary", { hasText: "Alpha" }).click();
+const alphaForm = page.locator("details:has(summary:has-text('Alpha')) form").first();
+await alphaForm.locator("label", { hasText: /^Newbie Nick$/ }).locator("input").check();
+await alphaForm.getByRole("button", { name: "Save team" }).click();
+await page.getByText("Team updated").waitFor();
+await page.goto(BASE + "/players");
+await page.getByLabel("Search players").fill("Newbie");
+const nickCard = await page.locator("a[href^='/players/']", { hasText: "Newbie Nick" }).innerText();
+ok(/0 matches/.test(nickCard), `late arrival not counted in earlier match (${nickCard.replace(/\n/g, " ")})`);
+await page.getByLabel("Search players").fill("Late Larry");
+const larryCard = await page.locator("a[href^='/players/']", { hasText: "Late Larry" }).innerText();
+ok(/1 match\b/.test(larryCard), "player added during a match counts for that match");
+
+// points: today's Sunday uses the new points
+await page.goto(BASE + "/stats");
+await page.getByText("How are MVP points worked out?").click();
+ok(await page.getByText(/15 per wicket, 15 per maiden/).isVisible(), "new points rules shown");
+
+// second role: admin (not super admin)
+await page.getByRole("button", { name: "Log out" }).click();
+await page.goto(BASE + "/login");
+await page.getByLabel("Username").fill("umpire");
+await page.getByLabel("Password").fill("umpire");
+await page.getByRole("button", { name: "Log in" }).click();
+await page.waitForURL(BASE + "/admin");
+ok(await page.getByText("Logged in as Admin").isVisible(), "admin (non-super) can log in");
+const staffOld = await page.evaluate(async (id) => {
+  const r = await fetch(`/api/matches/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo" }) });
+  return [r.status, (await r.json()).error];
+}, oldMatch.id);
+ok(staffOld[0] === 400 && /super admin/.test(staffOld[1]), "admin can't change a previous Sunday");
+await page.goto(BASE + `/admin/days/${oldMatch.match_day_id}`);
+ok(await page.getByText("Previous Sunday — view only").isVisible(), "admin sees previous Sunday as view-only");
+ok((await page.getByRole("button", { name: "Unlock for corrections" }).count()) === 0, "admin has no unlock button");
+await shot("14-admin-old-day");
+await page.goto(dayUrl);
+ok(await page.getByRole("button", { name: /Add .* go to toss/ }).isVisible(), "admin can still manage today's Sunday");
+await page.goto(BASE + "/admin/players");
+ok(await page.getByText("Only the super admin can rename players").isVisible(), "admin can't rename players");
 await ctx.setDefaultTimeout(5000);
 console.log(errors.length ? "Console errors:\n" + errors.join("\n") : "✓ no browser console errors");
 await browser.close();

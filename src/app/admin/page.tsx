@@ -4,7 +4,8 @@ import { createDay } from "./actions";
 import { getPlayers, listDays } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
 import { dataMode } from "@/lib/data/store";
-import { isDayLocked } from "@/lib/lock";
+import { canEditDay } from "@/lib/lock";
+import { currentRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,16 @@ function nextSunday() {
 
 export default async function AdminHome() {
   const [days, players] = await Promise.all([listDays(), getPlayers()]);
+  const role = currentRole();
   return (
     <div className="space-y-5">
       <div>
         <p className="text-sm font-semibold uppercase tracking-wider text-gold-700">Umpire desk</p>
         <h1 className="h1">Let&apos;s get scoring 🏏</h1>
+        <p className="mt-1 text-sm muted">
+          Logged in as <b className="text-pitch-900">{role === "super" ? "Super admin" : "Admin"}</b>
+          {role === "super" ? " — full access, including correcting previous Sundays." : " — you can run today's games; previous Sundays are view-only."}
+        </p>
         {dataMode() === "local" && <p className="mt-1 text-sm text-amber-700">Running in local mode — data is saved on this computer only.</p>}
       </div>
 
@@ -57,7 +63,7 @@ export default async function AdminHome() {
         {days.length === 0 && <p className="muted">None yet.</p>}
         {days.map((d) => (
           <Link key={d.id} href={`/admin/days/${d.id}`} className="card flex items-center justify-between p-4 hover:border-pitch/30">
-            <span className="font-semibold">{isDayLocked(d) && "🔒 "}{fmtDate(d.date)}{d.venue ? <span className="font-normal muted"> · {d.venue}</span> : null}</span>
+            <span className="font-semibold">{!canEditDay(d, role) && "🔒 "}{fmtDate(d.date)}{d.venue ? <span className="font-normal muted"> · {d.venue}</span> : null}</span>
             <span className="text-pitch">Manage →</span>
           </Link>
         ))}

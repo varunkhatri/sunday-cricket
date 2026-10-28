@@ -89,7 +89,7 @@ You need Node.js 18 or newer.
 npm install
 cp .env.example .env.local     # then set DATA_MODE=local in .env.local
 npm run seed:demo              # optional: fills in a month of demo matches
-npm run dev                    # open http://localhost:3000, admin login is admin / admin
+npm run dev                    # open http://localhost:3000, logins: admin/admin (super admin), umpire/umpire (admin)
 ```
 Local mode keeps data in the `.data/` folder. It's only for trying things out. The real site uses Supabase.
 
@@ -115,3 +115,17 @@ Local mode keeps data in the `.data/` folder. It's only for trying things out. T
 - Previous Sundays **lock automatically** the day after they're played: their scores, teams and matches can't be changed or deleted. Photos and the MVP vote can still be added.
 - If you really need to fix an old score, open that Sunday in the Umpire desk → **Unlock for corrections**, fix it, then **Lock again**.
 - **Umpire desk → Download backup** saves everything (all Sundays, balls, players) as one file. Worth doing once a month.
+
+
+## Two kinds of login
+| Login | Set in Vercel as | Can do |
+|---|---|---|
+| **Super admin** | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Everything, including unlocking and correcting previous Sundays, renaming players |
+| **Admin** | `SECOND_ADMIN_USERNAME` / `SECOND_ADMIN_PASSWORD` | Everything for today's Sunday (teams, matches, scoring, MVP, photos). Previous Sundays are view-only (they can still add photos). |
+
+To add or change the admin login: Vercel → your project → **Settings → Environment Variables**, add/edit the two `SECOND_ADMIN_…` values, then **Deployments → ⋯ → Redeploy**.
+
+(In local mode the logins are `admin`/`admin` for super admin and `umpire`/`umpire` for admin.)
+
+## Points
+From Sunday 1 November 2026: 1 per run, +1 per four, +2 per six, 15 per wicket, 15 per maiden, 5 per catch / run-out / stumping, +10 for 30+, +10 more for 50+, +10 for a 3-wicket haul, +5 for the winning side. Earlier Sundays keep the points they were played under. The rules live in `src/lib/cricket/stats.ts`.

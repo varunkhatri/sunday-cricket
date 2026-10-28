@@ -49,6 +49,9 @@ export interface Match {
   common_player_id?: string | null;
   /** The last batter can carry on alone until the innings ends */
   last_man_stands?: boolean;
+  /** Who was in each side for THIS match (null = older match: use the day's team list) */
+  team_a_players?: string[] | null;
+  team_b_players?: string[] | null;
   created_at: string;
 }
 
@@ -104,7 +107,10 @@ export interface Photo {
 
 /** Everything needed to render/compute one match. */
 export interface MatchBundle {
+  /** date of the match day (YYYY-MM-DD) — decides which points rules apply */
+  date?: string;
   match: Match;
+  /** the two sides, with player_ids narrowed to who was in THIS match */
   teamA: DayTeam;
   teamB: DayTeam;
   innings: Innings[]; // sorted by innings_no

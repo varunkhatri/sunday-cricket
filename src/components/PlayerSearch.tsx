@@ -17,7 +17,7 @@ export default function PlayerSearch({ players }: { players: { id: string; name:
             </span>
             <span className="min-w-0">
               <span className="block truncate font-semibold">{p.name}{p.nickname ? <span className="font-normal muted"> “{p.nickname}”</span> : null}</span>
-              <span className="text-sm muted tabular-nums">{p.matches} matches · {p.runs} runs · {p.wickets} wkts</span>
+              <span className="text-sm muted tabular-nums">{p.matches} match{p.matches === 1 ? "" : "es"} · {p.runs} runs · {p.wickets} wkts</span>
             </span>
           </Link>
         ))}

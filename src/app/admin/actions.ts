@@ -3,11 +3,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { COOKIE, checkCredentials, cookieOptions, makeSessionToken, requireAdmin } from "@/lib/auth";
+import { COOKIE, checkCredentials, cookieOptions, currentRole, makeSessionToken, requireAdmin, requireSuperAdmin } from "@/lib/auth";
+import { isPastForStaff, STAFF_PAST_MESSAGE } from "@/lib/lock";
 import { store } from "@/lib/data/store";
-import type { DayTeam, Match, Photo, Player } from "@/lib/types";
+import type { DayTeam, Match, MatchDay, Photo, Player } from "@/lib/types";
 import {
-  assertDayEditable, assertMatchEditable, deleteDayCascade, deleteMatchCascade, regenerateSummary, setOvers, startMatch,
+  assertDayEditable, assertMatchEditable, deleteDayCascade, deleteMatchCascade, regenerateSummary, setMatchPlayers, setOvers, startMatch,
 } from "@/lib/data/matchOps";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
@@ -21,11 +22,12 @@ function fail(e: unknown): ActionState {
 /* ---------- Login ---------- */
 
 export async function login(_: ActionState, fd: FormData): Promise<ActionState> {
-  if (!checkCredentials(str(fd, "username"), String(fd.get("password") ?? ""))) {
+  const role = checkCredentials(str(fd, "username"), String(fd.get("password") ?? ""));
+  if (!role) {
     await new Promise((r) => setTimeout(r, 600));
     return { error: "Wrong username or password" };
   }
-  cookies().set(COOKIE, makeSessionToken(), cookieOptions);
+  cookies().set(COOKIE, makeSessionToken(role), cookieOptions);
   redirect(str(fd, "next") || "/admin");
 }
 
@@ -64,7 +66,8 @@ export async function addPlayers(_: ActionState, fd: FormData): Promise<ActionSt
 
 export async function updatePlayer(_: ActionState, fd: FormData): Promise<ActionState> {
   try {
-    requireAdmin();
+    // renaming changes how a player appears in every past scorecard, so it's super admin only
+    requireSuperAdmin();
     const name = str(fd, "name");
     if (!name) return { error: "Name can't be empty" };
     await store().update("players", str(fd, "id"), { name, nickname: str(fd, "nickname") || null });
@@ -273,6 +276,7 @@ export async function deletePhoto(fd: FormData) {
   requireAdmin();
   const p = await store().get<Photo>("photos", str(fd, "id"));
   if (p) {
+    await assertStaffNotPast(p.match_day_id);
     await store().deleteFile(p.path).catch(() => undefined);
     await store().remove("photos", { id: p.id });
   }
@@ -297,7 +301,7 @@ export async function movePhoto(fd: FormData) {
 /* ---------- History lock ---------- */
 
 export async function setDayLock(fd: FormData) {
-  requireAdmin();
+  requireSuperAdmin();
   const v = str(fd, "locked");
   // "auto" = back to automatic (locked once the day is in the past)
   await store().update("match_days", str(fd, "id"), { locked: v === "true" ? true : v === "false" ? false : null });
@@ -310,6 +314,7 @@ export async function setMvp(_: ActionState, fd: FormData): Promise<ActionState>
   try {
     requireAdmin();
     const id = str(fd, "id");
+    await assertStaffNotPast(id);
     const pid = str(fd, "mvp_player_id") || null;
     if (pid) {
       const teams = await store().list<DayTeam>("day_teams", { match_day_id: id });
@@ -320,6 +325,24 @@ export async function setMvp(_: ActionState, fd: FormData): Promise<ActionState>
     await store().update("match_days", id, { mvp_player_id: pid, mvp_note: pid ? str(fd, "mvp_note").slice(0, 200) || null : null });
     revalidatePath("/", "layout");
     return { ok: pid ? "MVP of the day saved 🏅" : "MVP cleared" };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** The admin (not super admin) role can't change anything about a previous Sunday. */
+async function assertStaffNotPast(dayId: string) {
+  if (currentRole() !== "staff") return;
+  const day = await store().get<MatchDay>("match_days", dayId);
+  if (day && isPastForStaff(day)) throw new Error(STAFF_PAST_MESSAGE);
+}
+
+export async function setMatchPlayersAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    requireAdmin();
+    await setMatchPlayers(str(fd, "id"), fd.getAll("team_a_players").map(String), fd.getAll("team_b_players").map(String));
+    revalidatePath("/", "layout");
+    return { ok: "Saved — match counts updated" };
   } catch (e) {
     return fail(e);
   }

@@ -33,7 +33,10 @@ export interface PlayerMatchPerf {
   fieldPoints: number;
 }
 
-export const POINTS = {
+export type PointsRules = typeof POINTS_ORIGINAL;
+
+/** Points used for every match day before 1 November 2026 — kept so past awards never change. */
+export const POINTS_ORIGINAL = {
   run: 1,
   fourBonus: 1,
   sixBonus: 2,
@@ -46,10 +49,34 @@ export const POINTS = {
   win: 5,
 };
 
+/** Points from Sunday 1 November 2026 onwards. */
+export const POINTS_NOV_2026: PointsRules = {
+  run: 1,
+  fourBonus: 1,
+  sixBonus: 2,
+  wicket: 15,
+  maiden: 15,
+  fielding: 5,
+  thirty: 10,
+  fifty: 10,
+  threeFor: 10,
+  win: 5,
+};
+
+export const POINTS_NOV_2026_FROM = "2026-10-29";
+
+/** The points rules that apply to a match day (by its date, YYYY-MM-DD). */
+export function pointsFor(date?: string | null): PointsRules {
+  return date && date < POINTS_NOV_2026_FROM ? POINTS_ORIGINAL : POINTS_NOV_2026;
+}
+
+/** The current rules (shown on the Stats page). */
+export const POINTS = POINTS_NOV_2026;
+
 type RawPerf = Omit<PlayerMatchPerf, "points" | "batPoints" | "bowlPoints" | "fieldPoints">;
 
-/** Same MVP formula as always, split into batting / bowling / fielding parts (+ win bonus). */
-export function pointsBreakdown(p: RawPerf) {
+/** MVP points split into batting / bowling / fielding parts (+ win bonus). */
+export function pointsBreakdown(p: RawPerf, POINTS: PointsRules = POINTS_NOV_2026) {
   const bat =
     p.runs * POINTS.run +
     p.fours * POINTS.fourBonus +
@@ -62,8 +89,8 @@ export function pointsBreakdown(p: RawPerf) {
   return { bat, bowl, field, win, total: bat + bowl + field + win };
 }
 
-export function perfPoints(p: RawPerf) {
-  return pointsBreakdown(p).total;
+export function perfPoints(p: RawPerf, rules?: PointsRules) {
+  return pointsBreakdown(p, rules).total;
 }
 
 /** Everyone who can play for a team in this match: its squad plus the common player. */
@@ -145,7 +172,7 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
     }
   }
   return [...perfs.values()].map((p) => {
-    const b = pointsBreakdown(p);
+    const b = pointsBreakdown(p, pointsFor(bundle.date));
     return { ...p, points: b.total, batPoints: b.bat, bowlPoints: b.bowl, fieldPoints: b.field };
   });
 }

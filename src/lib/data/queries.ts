@@ -33,15 +33,16 @@ function assemble(day: MatchDay, teams: DayTeam[], matches: Match[], innings: In
     .filter((m) => m.match_day_id === day.id)
     .sort((a, b) => a.match_no - b.match_no)
     .map((m) => ({
+      date: day.date,
       match: m,
-      teamA: tm.get(m.team_a_id)!,
-      teamB: tm.get(m.team_b_id)!,
+      teamA: withMatchSquad(tm.get(m.team_a_id), m.team_a_players),
+      teamB: withMatchSquad(tm.get(m.team_b_id), m.team_b_players),
       innings: innings.filter((i) => i.match_id === m.id).sort((a, b) => a.innings_no - b.innings_no),
       balls: balls
         .filter((b) => b.match_id === m.id)
         .sort((a, b) => (innNo.get(a.innings_id) ?? 0) - (innNo.get(b.innings_id) ?? 0) || a.seq - b.seq),
     }))
-    .filter((b) => b.teamA && b.teamB);
+    .filter((b) => !!b.teamA && !!b.teamB) as MatchBundle[];
   return {
     day,
     teams: teams.filter((t) => t.match_day_id === day.id).sort((a, b) => a.created_at.localeCompare(b.created_at)),
@@ -78,17 +79,26 @@ export async function getMatchBundle(id: ID): Promise<MatchBundle | null> {
   const s = store();
   const match = await s.get<Match>("matches", id);
   if (!match) return null;
-  const [teamA, teamB, innings, balls] = await Promise.all([
+  const [dayTeamA, dayTeamB, innings, balls, day] = await Promise.all([
     s.get<DayTeam>("day_teams", match.team_a_id),
     s.get<DayTeam>("day_teams", match.team_b_id),
     s.list<Innings>("innings", { match_id: id }),
     s.list<Ball>("balls", { match_id: id }),
+    s.get<MatchDay>("match_days", match.match_day_id),
   ]);
+  const teamA = withMatchSquad(dayTeamA ?? undefined, match.team_a_players);
+  const teamB = withMatchSquad(dayTeamB ?? undefined, match.team_b_players);
   if (!teamA || !teamB) return null;
   innings.sort((a, b) => a.innings_no - b.innings_no);
   const order = new Map(innings.map((i) => [i.id, i.innings_no]));
   balls.sort((a, b) => (order.get(a.innings_id)! - order.get(b.innings_id)!) || a.seq - b.seq);
-  return { match, teamA, teamB, innings, balls };
+  return { date: day?.date, match, teamA, teamB, innings, balls };
+}
+
+/** A day's team, narrowed to the players who were in a particular match (when that's recorded). */
+function withMatchSquad(team: DayTeam | undefined, squad: string[] | null | undefined): DayTeam | undefined {
+  if (!team) return undefined;
+  return Array.isArray(squad) ? { ...team, player_ids: squad } : team;
 }
 
 /** Days whose date falls within [from, to] (inclusive, YYYY-MM-DD). */

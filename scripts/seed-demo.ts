@@ -82,7 +82,7 @@ async function main() {
   const dates = ["2026-09-06", "2026-09-13", "2026-09-20", "2026-09-27", "2026-10-04"];
   const teamNames = [["Thunder", "Lightning"], ["Strikers", "Warriors"], ["Royals", "Titans"], ["Falcons", "Panthers"], ["Mavericks", "Gladiators"]];
   for (const [i, date] of dates.entries()) {
-    const day = await s.insert<{ id: string }>("match_days", { date, venue: "Victoria Park", notes: i === 4 ? "Perfect sunshine and a full turnout of 14! ☀️" : null });
+    const day = await s.insert<{ id: string }>("match_days", { date, locked: false, venue: "Victoria Park", notes: i === 4 ? "Perfect sunshine and a full turnout of 14! ☀️" : null });
     const sh = shuffle(players.map((p) => p.id));
     const half = [sh.slice(0, 7), sh.slice(7)];
     const teams: DayTeam[] = [];
@@ -96,6 +96,7 @@ async function main() {
       });
       await playMatch(m.id, skill);
     }
+    await s.update("match_days", day.id, { locked: null }); // back to automatic locking
     console.log(`Seeded ${date}`);
   }
 }

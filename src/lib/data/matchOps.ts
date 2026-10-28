@@ -1,15 +1,16 @@
 import type { Ball, DayTeam, ExtraType, ID, Innings, Match, MatchBundle, MatchDay, Player, WicketType } from "../types";
 import { computeMatch } from "../cricket/engine";
 import { matchSquad } from "../cricket/stats";
-import { isDayLocked, LOCKED_MESSAGE } from "../lock";
+import { canEditDay, isPastForStaff, LOCKED_MESSAGE, STAFF_PAST_MESSAGE } from "../lock";
+import { actingRole } from "../auth";
 import { generateSummary } from "../cricket/summary";
 import { getMatchBundle, getPlayerNames } from "./queries";
 import { store } from "./store";
 
 export class ConflictError extends Error {}
 export class LockedError extends Error {
-  constructor() {
-    super(LOCKED_MESSAGE);
+  constructor(msg = LOCKED_MESSAGE) {
+    super(msg);
   }
 }
 
@@ -17,7 +18,8 @@ export class LockedError extends Error {
 export async function assertDayEditable(dayId: ID) {
   const day = await store().get<MatchDay>("match_days", dayId);
   if (!day) throw new Error("Day not found");
-  if (isDayLocked(day)) throw new LockedError();
+  const role = actingRole();
+  if (!canEditDay(day, role)) throw new LockedError(role === "staff" && isPastForStaff(day) ? STAFF_PAST_MESSAGE : LOCKED_MESSAGE);
   return day;
 }
 
@@ -37,7 +39,12 @@ export async function startMatch(matchId: ID, tossWinnerId: ID, decision: "bat" 
   const other = tossWinnerId === m.team_a_id ? m.team_b_id : m.team_a_id;
   const bat = decision === "bat" ? tossWinnerId : other;
   const bowl = bat === m.team_a_id ? m.team_b_id : m.team_a_id;
-  await s.update("matches", matchId, { toss_winner_id: tossWinnerId, toss_decision: decision, status: "live" });
+  // remember exactly who is in each side for THIS match, so later arrivals don't count as having played it
+  const [ta, tb] = await Promise.all([s.get<DayTeam>("day_teams", m.team_a_id), s.get<DayTeam>("day_teams", m.team_b_id)]);
+  await s.update("matches", matchId, {
+    toss_winner_id: tossWinnerId, toss_decision: decision, status: "live",
+    team_a_players: ta?.player_ids ?? [], team_b_players: tb?.player_ids ?? [],
+  });
   if (commonPlayerId) await setCommonPlayer(matchId, commonPlayerId);
   await s.insert("innings", { match_id: matchId, innings_no: 1, batting_team_id: bat, bowling_team_id: bowl, closed: false });
 }
@@ -274,10 +281,45 @@ export async function addPlayerToTeam(matchId: ID, teamId: ID, opts: { playerId?
   if (playerId === bundle.match.common_player_id) throw new Error("That's the common player — they already play for both teams");
   const dayTeams = await s.list<DayTeam>("day_teams", { match_day_id: bundle.match.match_day_id });
   const clash = dayTeams.find((t) => t.player_ids.includes(playerId!));
-  if (clash) throw new Error(clash.id === team.id ? "Already in this team" : `Already playing for ${clash.name} today`);
-  await s.update("day_teams", team.id, { player_ids: [...team.player_ids, playerId] });
+  const inThisMatch = team.player_ids.includes(playerId);
+  if (inThisMatch) throw new Error("Already in this team");
+  if (clash && clash.id !== team.id) throw new Error(`Already playing for ${clash.name} today`);
+  // add to the day's team (for the rest of the day) and to this match's line-up
+  const stored = dayTeams.find((t) => t.id === team.id)!;
+  if (!stored.player_ids.includes(playerId)) await s.update("day_teams", team.id, { player_ids: [...stored.player_ids, playerId] });
+  const key = team.id === bundle.match.team_a_id ? "team_a_players" : "team_b_players";
+  const current = bundle.match[key];
+  if (Array.isArray(current)) await s.update("matches", matchId, { [key]: [...current, playerId] });
   await growPlayersPerSide(matchId);
   return playerId;
+}
+
+/** Correct who played in a match (e.g. someone who only arrived for a later match). */
+export async function setMatchPlayers(matchId: ID, teamA: ID[], teamB: ID[]) {
+  const bundle = await getMatchBundle(matchId);
+  if (!bundle) throw new Error("Match not found");
+  await assertDayEditable(bundle.match.match_day_id);
+  const a = [...new Set(teamA)];
+  const b = [...new Set(teamB)];
+  if (a.some((p) => b.includes(p))) throw new Error("A player can't be in both teams (use the common player for that)");
+  const common = bundle.match.common_player_id;
+  const players = await store().list<Player>("players");
+  const nameOf = (id: ID) => players.find((p) => p.id === id)?.name ?? "A player";
+  // anyone who batted, bowled or fielded must stay in the side they played for
+  for (const inn of bundle.innings) {
+    const balls = bundle.balls.filter((x) => x.innings_id === inn.id);
+    const batting = new Set(balls.flatMap((x) => [x.striker_id, x.non_striker_id]).filter(Boolean) as ID[]);
+    const fielding = new Set(balls.flatMap((x) => [x.bowler_id, x.fielder_id]).filter(Boolean) as ID[]);
+    const check = (ids: Set<ID>, teamId: ID) => {
+      const list = teamId === bundle.match.team_a_id ? a : b;
+      for (const id of ids) if (id !== common && !list.includes(id)) throw new Error(`${nameOf(id)} played in this match, so they must stay in the team`);
+    };
+    check(batting, inn.batting_team_id);
+    check(fielding, inn.bowling_team_id);
+  }
+  if (a.length < 1 || b.length < 1) throw new Error("Each team needs at least one player");
+  await store().update("matches", matchId, { team_a_players: a, team_b_players: b });
+  await syncMatch(matchId);
 }
 
 /** Delete a whole day and everything in it (works for both stores). */

@@ -4,7 +4,7 @@ import MonthPicker from "@/components/MonthPicker";
 import { aggregatePlayers } from "@/lib/cricket/stats";
 import { getPlayerNames } from "@/lib/data/queries";
 import { availableMonths, loadRange } from "@/lib/data/statsLoader";
-import { POINTS } from "@/lib/cricket/stats";
+import { POINTS, POINTS_ORIGINAL } from "@/lib/cricket/stats";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +23,13 @@ export default async function StatsPage({ searchParams }: { searchParams: Record
       <details className="card p-4 text-sm">
         <summary className="cursor-pointer font-semibold text-pitch">How are MVP points worked out?</summary>
         <p className="mt-2 muted">
-          {POINTS.run} per run, +{POINTS.fourBonus} per four, +{POINTS.sixBonus} per six, {POINTS.wicket} per wicket, {POINTS.maiden} per maiden,
+          From 1 November 2026: {POINTS.run} per run, +{POINTS.fourBonus} per four, +{POINTS.sixBonus} per six, {POINTS.wicket} per wicket, {POINTS.maiden} per maiden,
           {" "}{POINTS.fielding} per catch / run-out / stumping, +{POINTS.thirty} for 30+, +{POINTS.fifty} more for 50+, +{POINTS.threeFor} for a 3-wicket haul,
           and +{POINTS.win} for being on the winning side. The Player of the Day is whoever scores the most points that Sunday.
+        </p>
+        <p className="mt-2 text-xs muted">
+          Earlier Sundays keep the points they were played under ({POINTS_ORIGINAL.wicket} per wicket, {POINTS_ORIGINAL.maiden} per maiden,
+          {" "}{POINTS_ORIGINAL.fielding} per catch / run-out / stumping, the rest the same), so past awards never change.
         </p>
       </details>
     </div>

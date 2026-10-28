@@ -17,3 +17,22 @@ export function isDayLocked(day: Pick<MatchDay, "date" | "locked">) {
 
 export const LOCKED_MESSAGE =
   "This Sunday is locked to protect its history. Unlock it on the day page if you really need to correct something.";
+
+export const STAFF_PAST_MESSAGE =
+  "Previous Sundays can only be changed by the super admin.";
+
+/**
+ * Can this role change scores/teams/matches of this day?
+ *  - super admin: yes, unless the day is locked (previous Sundays lock automatically; they can unlock).
+ *  - admin: only today's (or a future) Sunday, and never one that has been locked.
+ */
+export function canEditDay(day: Pick<MatchDay, "date" | "locked">, role: "super" | "staff" | null) {
+  if (!role) return false;
+  if (role === "super") return !isDayLocked(day);
+  return day.date >= londonToday() && day.locked !== true;
+}
+
+/** Previous Sunday as seen by the admin (not super admin) role. */
+export function isPastForStaff(day: Pick<MatchDay, "date">) {
+  return day.date < londonToday();
+}
