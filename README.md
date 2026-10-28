@@ -13,6 +13,7 @@ A mobile-first web app for scoring our Sunday cricket ball by ball.
 - **Awards:** points-based Player of the Day, Best Batsman / Bowler / Fielder, plus an MVP chosen by the players' vote.
 - **Run-rate charts** for each team and both teams together.
 - **History lock:** previous Sundays are locked automatically, and the admin can download a full backup.
+- **Installable app:** add it to the home screen on iPhone or Android — own icon, full-screen, works with patchy signal.
 - **Read-only for everyone else:** only the admin can change anything, and this is enforced on the server.
 
 👉 **See [SETUP.md](SETUP.md) to put it online for free (Supabase + Vercel).**

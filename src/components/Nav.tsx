@@ -15,10 +15,11 @@ export default function Nav({ admin }: { admin: boolean }) {
   const path = usePathname();
   const active = (h: string) => (h === "/" ? path === "/" : path.startsWith(h));
   return (
-    <header className="sticky top-0 z-30 bg-pitch text-white shadow-md">
+    <header className="sticky top-0 z-30 bg-pitch pt-[env(safe-area-inset-top)] text-white shadow-md">
       <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
         <Link href="/" className="flex shrink-0 items-center gap-2 whitespace-nowrap font-display text-lg font-extrabold tracking-tight">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gold text-base">🏏</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/logo-128.png" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-white/20" />
           <span>Sunday Cricket</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">

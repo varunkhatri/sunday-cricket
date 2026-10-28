@@ -129,3 +129,12 @@ To add or change the admin login: Vercel → your project → **Settings → Env
 
 ## Points
 From Sunday 1 November 2026: 1 per run, +1 per four, +2 per six, 15 per wicket, 15 per maiden, 5 per catch / run-out / stumping, +10 for 30+, +10 more for 50+, +10 for a 3-wicket haul, +5 for the winning side. Earlier Sundays keep the points they were played under. The rules live in `src/lib/cricket/stats.ts`.
+
+
+## Installing it as an app on phones
+The site is an installable app (no app store needed):
+- **iPhone (Safari):** open the link → **Share** ⬆️ → **Add to Home Screen** → **Add**.
+- **Android (Chrome):** open the link → tap **📲 Install app** on the banner, or **⋮ → Install app / Add to Home screen**.
+
+It opens full-screen with its own cricket-ball icon. Updates arrive automatically when you push — no reinstalling.
+With no signal, pages already opened still show their last scores; the umpire's scorer keeps unsent balls on the phone.
