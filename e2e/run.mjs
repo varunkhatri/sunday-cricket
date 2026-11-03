@@ -269,6 +269,83 @@ await page.goto(BASE + "/stats");
 await page.getByText("How are MVP points worked out?").click();
 ok(await page.getByText(/15 per wicket, 15 per maiden/).isVisible(), "new points rules shown");
 
+// new captains + reshuffled teams later the same day (players from both earlier teams)
+await page.goto(dayUrl);
+const newTeamForm = page.locator("details:has(summary:text('+ New team')) form");
+await page.locator("summary", { hasText: "+ New team" }).click();
+async function makeLateTeam(name, players, captain) {
+  await page.goto(dayUrl);
+  await page.locator("summary", { hasText: "+ New team" }).click();
+  await newTeamForm.locator("input[name=name]").fill(name);
+  for (const p of players) await newTeamForm.locator("label", { hasText: new RegExp(`^${p}`) }).locator("input").check();
+  await newTeamForm.locator("select[name=captain_id]").selectOption({ label: captain });
+  await newTeamForm.getByRole("button", { name: "Create team" }).click();
+  await page.locator("summary", { hasText: name }).waitFor();
+}
+ok((await newTeamForm.locator("input[type=checkbox]:disabled").count()) === 0, "no players greyed out when making a new team");
+ok(await newTeamForm.getByText("also in Alpha").first().isVisible(), "players from earlier teams show which team they're also in");
+await makeLateTeam("Charlie", ["Test One", "Test Four"], "Test Four");
+await makeLateTeam("Delta", ["Test Two", "Test Five"], "Test Two");
+ok(true, "new teams made from players who already played today");
+const exportBefore = await page.evaluate(async () => (await fetch("/api/export")).json());
+// a match can't have the same player on both sides
+await page.goto(dayUrl);
+await page.locator("select[name=team_a_id]").selectOption({ label: "Alpha" });
+await page.locator("select[name=team_b_id]").selectOption({ label: "Charlie" });
+await page.getByRole("button", { name: /Add .* go to toss/ }).click();
+await page.getByText(/Test One is in both Alpha and Charlie/).waitFor();
+ok(true, "same player on both sides of one match is refused");
+await page.locator("select[name=team_a_id]").selectOption({ label: "Charlie" });
+await page.locator("select[name=team_b_id]").selectOption({ label: "Delta" });
+await page.locator("input[name=overs]").fill("1");
+await page.locator("input[name=players_per_side]").fill("2");
+await page.getByRole("button", { name: /Add .* go to toss/ }).click();
+await page.waitForURL(/\/score$/);
+await page.getByRole("button", { name: "Start match" }).click();
+await page.getByText("Opening bowler").waitFor();
+await sel("Next batter (on strike)", "Test One");
+await sel("Next batter (non-striker)", "Test Four");
+await sel("Opening bowler", "Test Two");
+for (let i = 0; i < 6; i++) { await tap("•"); await settle(); }
+await page.waitForTimeout(1200);
+await page.getByText("2nd innings").waitFor({ timeout: 10000 });
+await sel("Next batter (on strike)", "Test Two");
+await sel("Next batter (non-striker)", "Test Five");
+await sel("Opening bowler", "Test One");
+await tap("4"); await settle();
+await page.waitForTimeout(1500);
+await page.reload();
+await page.getByText(/Delta won by/).first().waitFor({ timeout: 10000 });
+ok(true, "4th-game style match with new captains scored to a result");
+const exportAfter = await page.evaluate(async () => (await fetch("/api/export")).json());
+const m1Before = exportBefore.matches.find((m) => m.match_no === 1 && m.match_day_id === exportAfter.matches.find((x) => x.status === "completed" && x.result_text?.startsWith("Alpha"))?.match_day_id);
+const m1After = exportAfter.matches.find((m) => m.id === m1Before.id);
+ok(JSON.stringify([m1Before.team_a_players, m1Before.team_b_players, m1Before.result_text, m1Before.summary]) ===
+   JSON.stringify([m1After.team_a_players, m1After.team_b_players, m1After.result_text, m1After.summary]), "earlier match's line-ups, result and report unchanged");
+ok(exportAfter.balls.filter((b) => b.match_id === m1Before.id).length === exportBefore.balls.filter((b) => b.match_id === m1Before.id).length, "earlier match's balls unchanged");
+await page.goto(BASE + "/players");
+await page.getByLabel("Search players").fill("Test One");
+ok(/2 matches/.test(await page.locator("a[href^='/players/']", { hasText: "Test One" }).innerText()), "player who played both games has 2 matches");
+await page.getByLabel("Search players").fill("Test Three");
+ok(/1 match\b/.test(await page.locator("a[href^='/players/']", { hasText: "Test Three" }).innerText()), "player only in the first game still has 1 match");
+// editing a team of an older match (before line-ups were recorded) can't change that match
+await page.goto(BASE + `/admin/days/${oldMatch.match_day_id}`);
+await page.getByRole("button", { name: "Unlock for corrections" }).click();
+await page.getByText("Unlocked for corrections").waitFor();
+const oldTeamId = oldMatch.team_a_id;
+const oldTeam = exportAfter.day_teams.find((t) => t.id === oldTeamId);
+const dropped = exportAfter.players.find((p) => p.id === oldTeam.player_ids[oldTeam.player_ids.length - 1]);
+const oldTeamForm = page.locator(`details:has(summary:has-text("${oldTeam.name}")) form`).first();
+await page.locator("summary", { hasText: oldTeam.name }).click();
+await oldTeamForm.locator("label", { hasText: new RegExp(`^${dropped.name}`) }).locator("input").uncheck();
+await oldTeamForm.getByRole("button", { name: "Save team" }).click();
+await page.getByText("Team updated").waitFor();
+const exportOld = await page.evaluate(async () => (await fetch("/api/export")).json());
+const frozen = exportOld.matches.filter((m) => m.team_a_id === oldTeamId && m.status !== "setup");
+ok(frozen.length > 0 && frozen.every((m) => Array.isArray(m.team_a_players) && m.team_a_players.includes(dropped.id)), "older matches keep their original line-up when a team is edited later");
+await page.getByRole("button", { name: "🔒 Lock again" }).click();
+await page.getByText("This Sunday is locked").waitFor();
+
 // second role: admin (not super admin)
 await page.getByRole("button", { name: "Log out" }).click();
 await page.goto(BASE + "/login");

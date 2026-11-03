@@ -137,14 +137,9 @@ export async function saveTeam(_: ActionState, fd: FormData): Promise<ActionStat
     if (!name) return { error: "Give the team a name" };
     if (playerIds.length < 2) return { error: "Pick at least 2 players" };
     if (captain && !playerIds.includes(captain)) return { error: "Captain must be in the team" };
-    // a player can only be in one team on a given day
-    const others = (await store().list<DayTeam>("day_teams", { match_day_id: dayId })).filter((t) => t.id !== id);
-    const clash = others.find((t) => t.player_ids.some((p) => playerIds.includes(p)));
-    if (clash) {
-      const players = await store().list<Player>("players");
-      const dup = playerIds.find((p) => clash.player_ids.includes(p));
-      return { error: `${players.find((p) => p.id === dup)?.name ?? "A player"} is already in ${clash.name}` };
-    }
+    // Players may be in more than one team on the same day (e.g. new captains for the last game).
+    // Matches already started keep their own line-up, so editing a team never changes them.
+    if (id) await freezeLineups(id);
     const row = { match_day_id: dayId, name, captain_id: captain, player_ids: playerIds };
     if (id) await store().update("day_teams", id, row);
     else await store().insert("day_teams", row);
@@ -181,6 +176,8 @@ export async function createMatch(_: ActionState, fd: FormData): Promise<ActionS
     const pps = Number(str(fd, "players_per_side"));
     await assertDayEditable(dayId);
     if (!a || !b || a === b) return { error: "Pick two different teams" };
+    const both = await sharedPlayers(a, b);
+    if (both) return { error: both };
     if (!Number.isInteger(overs) || overs < 1 || overs > 50) return { error: "Overs must be 1–50" };
     if (!Number.isInteger(pps) || pps < 2 || pps > 15) return { error: "Players per side must be 2–15" };
     const existing = await store().list<Match>("matches", { match_day_id: dayId });
@@ -346,4 +343,30 @@ export async function setMatchPlayersAction(_: ActionState, fd: FormData): Promi
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Before a team is edited, record the line-up of any of its started matches that don't have one yet. */
+async function freezeLineups(teamId: string) {
+  const team = await store().get<DayTeam>("day_teams", teamId);
+  if (!team) return;
+  const [asA, asB] = await Promise.all([
+    store().list<Match>("matches", { team_a_id: teamId }),
+    store().list<Match>("matches", { team_b_id: teamId }),
+  ]);
+  for (const m of [...asA, ...asB]) {
+    if (m.status === "setup") continue; // not started: it will use the team as it is at the toss
+    const key = m.team_a_id === teamId ? "team_a_players" : "team_b_players";
+    if (!Array.isArray(m[key])) await store().update("matches", m.id, { [key]: team.player_ids });
+  }
+}
+
+/** A player can't be on both sides of the same match. Returns an error message, or null. */
+async function sharedPlayers(teamAId: string, teamBId: string): Promise<string | null> {
+  const [a, b] = await Promise.all([store().get<DayTeam>("day_teams", teamAId), store().get<DayTeam>("day_teams", teamBId)]);
+  if (!a || !b) return "Pick two teams from this Sunday";
+  const dup = a.player_ids.filter((p) => b.player_ids.includes(p));
+  if (!dup.length) return null;
+  const players = await store().list<Player>("players");
+  const names = dup.map((id) => players.find((p) => p.id === id)?.name ?? "A player");
+  return `${names.join(", ")} ${dup.length === 1 ? "is" : "are"} in both ${a.name} and ${b.name}. Take them out of one team (or make one the common player at the toss).`;
 }

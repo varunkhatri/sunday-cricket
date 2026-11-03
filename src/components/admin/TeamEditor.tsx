@@ -4,8 +4,10 @@ import ActionForm, { Submit } from "@/components/ActionForm";
 import { saveTeam } from "@/app/admin/actions";
 import type { DayTeam, Player } from "@/lib/types";
 
-export default function TeamEditor({ dayId, players, team, takenBy }: {
-  dayId: string; players: Player[]; team?: DayTeam; takenBy: Record<string, string>;
+export default function TeamEditor({ dayId, players, team, alsoIn }: {
+  dayId: string; players: Player[]; team?: DayTeam;
+  /** names of the day's other teams each player is already in (they can still be picked) */
+  alsoIn: Record<string, { id: string; name: string }[]>;
 }) {
   const [sel, setSel] = useState<string[]>(team?.player_ids ?? []);
   const [captain, setCaptain] = useState(team?.captain_id ?? "");
@@ -19,12 +21,15 @@ export default function TeamEditor({ dayId, players, team, takenBy }: {
         <span className="label">Players ({sel.length} picked)</span>
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           {players.map((p) => {
-            const taken = takenBy[p.id] && takenBy[p.id] !== team?.id;
+            const others = (alsoIn[p.id] ?? []).filter((t) => t.id !== team?.id);
             const on = sel.includes(p.id);
             return (
-              <label key={p.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm ${on ? "border-pitch bg-pitch-50 font-semibold" : "border-black/10"} ${taken ? "opacity-40" : ""}`}>
-                <input type="checkbox" name="player_ids" value={p.id} checked={on} disabled={!!taken} onChange={() => toggle(p.id)} className="accent-pitch" />
-                <span className="truncate">{p.name}</span>
+              <label key={p.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm ${on ? "border-pitch bg-pitch-50 font-semibold" : "border-black/10"}`}>
+                <input type="checkbox" name="player_ids" value={p.id} checked={on} onChange={() => toggle(p.id)} className="accent-pitch" />
+                <span className="min-w-0">
+                  <span className="block truncate">{p.name}</span>
+                  {others.length > 0 && <span className="block truncate text-xs font-normal muted">also in {others.map((t) => t.name).join(", ")}</span>}
+                </span>
               </label>
             );
           })}

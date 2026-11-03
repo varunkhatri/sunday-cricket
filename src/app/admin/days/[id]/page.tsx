@@ -18,8 +18,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
   if (!data) notFound();
   const { day, teams, bundles, photos } = data;
   const names = Object.fromEntries(players.map((p) => [p.id, p.name]));
-  const takenBy: Record<string, string> = {};
-  for (const t of teams) for (const p of t.player_ids) takenBy[p] = t.id;
+  const alsoIn: Record<string, { id: string; name: string }[]> = {};
+  for (const t of teams) for (const p of t.player_ids) (alsoIn[p] ??= []).push({ id: t.id, name: t.name });
+  // a new match defaults to the two most recently made teams (e.g. new captains for the last game)
+  const newestTeams = [...teams].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 2).reverse();
   const last = bundles[bundles.length - 1]?.match;
   const role = currentRole();
   const isSuper = role === "super";
@@ -105,10 +107,10 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
             <ActionForm action={createMatch} className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5 sm:items-end">
               <input type="hidden" name="match_day_id" value={day.id} />
               <label><span className="label">Team 1</span>
-                <select name="team_a_id" className="input" defaultValue={teams[0].id}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+                <select name="team_a_id" className="input" defaultValue={(last ? last.team_a_id : newestTeams[0]?.id) ?? teams[0].id} key={"a" + teams.length}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
               </label>
               <label><span className="label">Team 2</span>
-                <select name="team_b_id" className="input" defaultValue={teams[1].id}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+                <select name="team_b_id" className="input" defaultValue={(last ? last.team_b_id : newestTeams[1]?.id) ?? teams[1].id} key={"b" + teams.length}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
               </label>
               <label><span className="label">Overs</span><input type="number" name="overs" min={1} max={50} defaultValue={last?.overs ?? 6} className="input" /></label>
               <label><span className="label">Players a side</span><input type="number" name="players_per_side" min={2} max={15} defaultValue={defaultPps} className="input" /></label>
@@ -133,7 +135,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
             <summary className="cursor-pointer">
               <b>{t.name}</b> <span className="text-sm muted">· {t.player_ids.length} players{t.captain_id ? ` · c ${names[t.captain_id]}` : ""}</span>
             </summary>
-            <div className="mt-3"><TeamEditor dayId={day.id} players={players} team={t} takenBy={takenBy} /></div>
+            <div className="mt-3"><TeamEditor dayId={day.id} players={players} team={t} alsoIn={alsoIn} /></div>
             <form action={deleteTeam} className="mt-3">
               <input type="hidden" name="id" value={t.id} />
               <ConfirmButton message={`Delete ${t.name}? Any matches involving this team will be deleted too.`} className="btn-danger text-sm">Delete team</ConfirmButton>
@@ -142,7 +144,7 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
         ))}
         {!locked && <details className="card p-4" open={teams.length < 2}>
           <summary className="cursor-pointer font-semibold text-pitch">+ New team</summary>
-          <div className="mt-3"><TeamEditor dayId={day.id} players={players} takenBy={takenBy} /></div>
+          <div className="mt-3"><TeamEditor dayId={day.id} players={players} alsoIn={alsoIn} /></div>
         </details>}
       </section>
 

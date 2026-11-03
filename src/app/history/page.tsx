@@ -71,7 +71,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Reco
               </div>
               <p className="mt-1 text-sm">
                 {o.series.shared ? "🤝 Series shared" : w ? `🏆 ${w.name} won the series` : "Series not decided"}
-                {o.series.standings.length >= 2 && ` (${o.series.standings.map((s) => s.won).join("–")})`}
+                {o.series.standings.length === 2 && ` (${o.series.standings.map((s) => s.won).join("–")})`}
               </p>
               {o.potd && <p className="mt-1 text-sm text-gold-700">⭐ Player of the Day: <b>{names[o.potd.playerId]}</b></p>}
               {o.mvp && <p className="mt-1 text-sm text-violet-800">🏅 MVP (players&apos; vote): <b>{names[o.mvp]}</b></p>}

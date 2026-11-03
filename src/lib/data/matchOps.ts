@@ -41,6 +41,13 @@ export async function startMatch(matchId: ID, tossWinnerId: ID, decision: "bat" 
   const bowl = bat === m.team_a_id ? m.team_b_id : m.team_a_id;
   // remember exactly who is in each side for THIS match, so later arrivals don't count as having played it
   const [ta, tb] = await Promise.all([s.get<DayTeam>("day_teams", m.team_a_id), s.get<DayTeam>("day_teams", m.team_b_id)]);
+  const dup = (ta?.player_ids ?? []).filter((p) => (tb?.player_ids ?? []).includes(p));
+  if (dup.length) {
+    const players = await s.list<Player>("players");
+    throw new Error(`${dup.map((id) => players.find((p) => p.id === id)?.name ?? "A player").join(", ")} ${dup.length === 1 ? "is" : "are"} in both teams — take them out of one team first (or pick them as the common player)`);
+  }
+  if (commonPlayerId && [...(ta?.player_ids ?? []), ...(tb?.player_ids ?? [])].includes(commonPlayerId))
+    throw new Error("The common player can't already be in one of the teams");
   await s.update("matches", matchId, {
     toss_winner_id: tossWinnerId, toss_decision: decision, status: "live",
     team_a_players: ta?.player_ids ?? [], team_b_players: tb?.player_ids ?? [],
@@ -280,10 +287,11 @@ export async function addPlayerToTeam(matchId: ID, teamId: ID, opts: { playerId?
   }
   if (playerId === bundle.match.common_player_id) throw new Error("That's the common player — they already play for both teams");
   const dayTeams = await s.list<DayTeam>("day_teams", { match_day_id: bundle.match.match_day_id });
-  const clash = dayTeams.find((t) => t.player_ids.includes(playerId!));
   const inThisMatch = team.player_ids.includes(playerId);
   if (inThisMatch) throw new Error("Already in this team");
-  if (clash && clash.id !== team.id) throw new Error(`Already playing for ${clash.name} today`);
+  // being in another team earlier in the day is fine — just not on the other side of this match
+  const opponent = team.id === bundle.teamA.id ? bundle.teamB : bundle.teamA;
+  if (opponent.player_ids.includes(playerId)) throw new Error(`Already playing for ${opponent.name} in this match`);
   // add to the day's team (for the rest of the day) and to this match's line-up
   const stored = dayTeams.find((t) => t.id === team.id)!;
   if (!stored.player_ids.includes(playerId)) await s.update("day_teams", team.id, { player_ids: [...stored.player_ids, playerId] });
