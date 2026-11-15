@@ -8,7 +8,7 @@ import { isPastForStaff, STAFF_PAST_MESSAGE } from "@/lib/lock";
 import { store } from "@/lib/data/store";
 import type { DayTeam, Match, MatchDay, Photo, Player } from "@/lib/types";
 import {
-  assertDayEditable, assertMatchEditable, deleteDayCascade, deleteMatchCascade, regenerateSummary, setMatchPlayers, setOvers, startMatch,
+  assertDayEditable, assertMatchEditable, deleteBinnedDayForever, deleteMatchCascade, moveDayToBin, restoreDayFromBin, regenerateSummary, setMatchPlayers, setOvers, startMatch,
 } from "@/lib/data/matchOps";
 
 export type ActionState = { error?: string; ok?: string } | undefined;
@@ -115,12 +115,40 @@ export async function updateDay(_: ActionState, fd: FormData): Promise<ActionSta
   }
 }
 
-export async function deleteDay(fd: FormData) {
-  requireAdmin();
-  await assertDayEditable(str(fd, "id"));
-  await deleteDayCascade(str(fd, "id"));
+/** Typed confirmation: the person must type DELETE (any capitals). */
+const confirmed = (fd: FormData) => str(fd, "confirm").toLowerCase() === "delete";
+
+/** Move a Sunday to "Recently deleted" (super admin only). It can be restored for 30 days. */
+export async function deleteDay(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    requireSuperAdmin();
+    if (!confirmed(fd)) return { error: "Type DELETE in the box to confirm" };
+    await moveDayToBin(str(fd, "id"), "super admin");
+  } catch (e) {
+    return fail(e);
+  }
   revalidatePath("/", "layout");
-  redirect("/admin");
+  redirect("/admin?binned=1");
+}
+
+export async function restoreDay(fd: FormData) {
+  requireSuperAdmin();
+  const id = str(fd, "id");
+  await restoreDayFromBin(id);
+  revalidatePath("/", "layout");
+  redirect(`/admin/days/${id}`);
+}
+
+export async function deleteDayForever(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    requireSuperAdmin();
+    if (!confirmed(fd)) return { error: "Type DELETE in the box to confirm" };
+    await deleteBinnedDayForever(str(fd, "id"));
+  } catch (e) {
+    return fail(e);
+  }
+  revalidatePath("/", "layout");
+  redirect("/admin/deleted?gone=1");
 }
 
 /* ---------- Teams ---------- */

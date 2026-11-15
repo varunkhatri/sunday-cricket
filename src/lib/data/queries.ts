@@ -11,12 +11,23 @@ export async function getPlayerNames(): Promise<Record<ID, string>> {
   return Object.fromEntries(ps.map((p) => [p.id, p.nickname?.trim() || p.name]));
 }
 
+/** Sundays in use (anything in the "Recently deleted" bin is left out everywhere). */
 export async function listDays(): Promise<MatchDay[]> {
-  const ds = await store().list<MatchDay>("match_days");
+  const ds = (await store().list<MatchDay>("match_days")).filter((d) => !d.deleted_at);
   return ds.sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
 }
 
-export const getDay = (id: ID) => store().get<MatchDay>("match_days", id);
+/** Sundays in the "Recently deleted" bin, most recently deleted first. */
+export async function listDeletedDays(): Promise<MatchDay[]> {
+  const ds = (await store().list<MatchDay>("match_days")).filter((d) => !!d.deleted_at);
+  return ds.sort((a, b) => String(b.deleted_at).localeCompare(String(a.deleted_at)));
+}
+
+/** A Sunday by id — null if it doesn't exist or is in the "Recently deleted" bin. */
+export async function getDay(id: ID) {
+  const d = await store().get<MatchDay>("match_days", id);
+  return d && !d.deleted_at ? d : null;
+}
 export const getMatch = (id: ID) => store().get<Match>("matches", id);
 
 export interface DayFull {
@@ -86,6 +97,7 @@ export async function getMatchBundle(id: ID): Promise<MatchBundle | null> {
     s.list<Ball>("balls", { match_id: id }),
     s.get<MatchDay>("match_days", match.match_day_id),
   ]);
+  if (!day || day.deleted_at) return null; // its Sunday is in the "Recently deleted" bin
   const teamA = withMatchSquad(dayTeamA ?? undefined, match.team_a_players);
   const teamB = withMatchSquad(dayTeamB ?? undefined, match.team_b_players);
   if (!teamA || !teamB) return null;

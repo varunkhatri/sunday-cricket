@@ -18,6 +18,8 @@ create table if not exists match_days (
   mvp_player_id uuid references players(id) on delete set null,
   mvp_note text,
   locked boolean,
+  deleted_at timestamptz,
+  deleted_by text,
   created_at timestamptz not null default now()
 );
 

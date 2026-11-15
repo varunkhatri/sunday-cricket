@@ -17,7 +17,7 @@ export class LockedError extends Error {
 /** Refuse changes to a locked (previous) Sunday. */
 export async function assertDayEditable(dayId: ID) {
   const day = await store().get<MatchDay>("match_days", dayId);
-  if (!day) throw new Error("Day not found");
+  if (!day || day.deleted_at) throw new Error("Day not found");
   const role = actingRole();
   if (!canEditDay(day, role)) throw new LockedError(role === "staff" && isPastForStaff(day) ? STAFF_PAST_MESSAGE : LOCKED_MESSAGE);
   return day;
@@ -328,6 +328,44 @@ export async function setMatchPlayers(matchId: ID, teamA: ID[], teamB: ID[]) {
   if (a.length < 1 || b.length < 1) throw new Error("Each team needs at least one player");
   await store().update("matches", matchId, { team_a_players: a, team_b_players: b });
   await syncMatch(matchId);
+}
+
+/* ---------- "Recently deleted" bin ---------- */
+
+export const BIN_DAYS = 30;
+
+/** Move a Sunday to the "Recently deleted" bin. Nothing is removed, so it can be restored. */
+export async function moveDayToBin(dayId: ID, by: string) {
+  await assertDayEditable(dayId);
+  await store().update("match_days", dayId, { deleted_at: new Date().toISOString(), deleted_by: by });
+}
+
+/** Bring a Sunday back from the bin exactly as it was. */
+export async function restoreDayFromBin(dayId: ID) {
+  const day = await store().get<MatchDay>("match_days", dayId);
+  if (!day) throw new Error("That Sunday no longer exists");
+  if (!day.deleted_at) return;
+  await store().update("match_days", dayId, { deleted_at: null, deleted_by: null });
+}
+
+/** Days left before a binned Sunday is removed for good. */
+export function binDaysLeft(deletedAt: string, now = Date.now()) {
+  const ms = new Date(deletedAt).getTime() + BIN_DAYS * 86400000 - now;
+  return Math.max(0, Math.ceil(ms / 86400000));
+}
+
+/** Permanently remove Sundays that have been in the bin for more than 30 days. */
+export async function purgeExpiredBin() {
+  const all = await store().list<MatchDay>("match_days");
+  for (const d of all) if (d.deleted_at && binDaysLeft(d.deleted_at) === 0) await deleteDayCascade(d.id);
+}
+
+/** Permanently remove a Sunday that is in the bin (it must be in the bin first). */
+export async function deleteBinnedDayForever(dayId: ID) {
+  const day = await store().get<MatchDay>("match_days", dayId);
+  if (!day) return;
+  if (!day.deleted_at) throw new Error("Move the Sunday to Recently deleted first");
+  await deleteDayCascade(dayId);
 }
 
 /** Delete a whole day and everything in it (works for both stores). */

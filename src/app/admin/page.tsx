@@ -1,7 +1,8 @@
 import Link from "next/link";
 import ActionForm, { Submit } from "@/components/ActionForm";
 import { createDay } from "./actions";
-import { getPlayers, listDays } from "@/lib/data/queries";
+import { getPlayers, listDays, listDeletedDays } from "@/lib/data/queries";
+import { purgeExpiredBin } from "@/lib/data/matchOps";
 import { fmtDate } from "@/lib/format";
 import { dataMode } from "@/lib/data/store";
 import { canEditDay } from "@/lib/lock";
@@ -16,9 +17,10 @@ function nextSunday() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-export default async function AdminHome() {
-  const [days, players] = await Promise.all([listDays(), getPlayers()]);
+export default async function AdminHome({ searchParams }: { searchParams: { binned?: string } }) {
   const role = currentRole();
+  if (role === "super") await purgeExpiredBin(); // removes Sundays deleted more than 30 days ago
+  const [days, players, binned] = await Promise.all([listDays(), getPlayers(), role === "super" ? listDeletedDays() : Promise.resolve([])]);
   return (
     <div className="space-y-5">
       <div>
@@ -30,6 +32,11 @@ export default async function AdminHome() {
         </p>
         {dataMode() === "local" && <p className="mt-1 text-sm text-amber-700">Running in local mode — data is saved on this computer only.</p>}
       </div>
+      {searchParams.binned && (
+        <p role="status" className="card border-amber-300 bg-amber-50 p-4 text-sm">
+          🗑 The Sunday was moved to <Link href="/admin/deleted" className="font-semibold underline">Recently deleted</Link>. You can restore it for the next 30 days.
+        </p>
+      )}
 
       <ol className="grid gap-3 sm:grid-cols-3 text-sm">
         <li className="card p-4"><b className="text-pitch">1. Players</b><p className="muted">Add everyone once — they&apos;re reused every Sunday.</p></li>
@@ -57,7 +64,12 @@ export default async function AdminHome() {
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h2 className="h2">Sundays</h2>
-          {days.length > 0 && <a href="/api/export" className="btn-ghost text-sm">⬇ Download backup</a>}
+          <div className="flex flex-wrap justify-end gap-2">
+            {role === "super" && (
+              <Link href="/admin/deleted" className="btn-ghost text-sm">🗑 Recently deleted{binned.length ? ` (${binned.length})` : ""}</Link>
+            )}
+            {days.length > 0 && <a href="/api/export" className="btn-ghost text-sm">⬇ Download backup</a>}
+          </div>
         </div>
         {days.length > 0 && <p className="text-xs muted">🔒 Previous Sundays lock automatically so their scores can&apos;t be changed by accident.</p>}
         {days.length === 0 && <p className="muted">None yet.</p>}

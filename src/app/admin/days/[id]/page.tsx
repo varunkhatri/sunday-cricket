@@ -184,10 +184,27 @@ export default async function AdminDay({ params }: { params: { id: string } }) {
           <label className="sm:col-span-2"><span className="label">Note for everyone (optional)</span><textarea name="notes" defaultValue={day.notes ?? ""} rows={2} className="input" placeholder="e.g. Great turnout today — 14 players!" /></label>
           <div><Submit>Save details</Submit></div>
         </ActionForm>
-        <form action={deleteDay} className="mt-4 border-t border-black/5 pt-4">
-          <input type="hidden" name="id" value={day.id} />
-          <ConfirmButton message="Delete this whole Sunday, including all matches, scores and photos? This can't be undone.">Delete this Sunday</ConfirmButton>
-        </form>
+        <div className="mt-4 border-t border-black/5 pt-4">
+          {isSuper ? (
+            <details>
+              <summary className="cursor-pointer text-sm font-semibold text-red-700">Delete this Sunday…</summary>
+              <p className="mt-2 text-sm muted">
+                It moves to <b>Recently deleted</b> (Umpire desk) with all its matches, scores and photos, and can be restored for 30 days.
+                After that it&apos;s removed for good.
+              </p>
+              <ActionForm action={deleteDay} className="mt-3 flex flex-wrap items-end gap-2">
+                <input type="hidden" name="id" value={day.id} />
+                <label className="min-w-40 flex-1">
+                  <span className="label">Type DELETE to confirm</span>
+                  <input name="confirm" className="input" autoComplete="off" autoCapitalize="characters" placeholder="DELETE" aria-label="Type DELETE to confirm" />
+                </label>
+                <Submit className="btn-danger" pendingText="Deleting…">Delete this Sunday</Submit>
+              </ActionForm>
+            </details>
+          ) : (
+            <p className="text-sm muted">🔒 Only the super admin can delete a Sunday.</p>
+          )}
+        </div>
       </section>}
     </div>
   );

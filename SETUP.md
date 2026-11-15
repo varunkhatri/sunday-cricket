@@ -138,3 +138,11 @@ The site is an installable app (no app store needed):
 
 It opens full-screen with its own cricket-ball icon. Updates arrive automatically when you push — no reinstalling.
 With no signal, pages already opened still show their last scores; the umpire's scorer keeps unsent balls on the phone.
+
+
+## Deleting a Sunday (and getting it back)
+- Only the **super admin** can delete a Sunday: open it in the Umpire desk → **Delete this Sunday…** → type `DELETE` → confirm.
+- It goes to **Umpire desk → 🗑 Recently deleted**, hidden from everyone, with all its matches, balls and photos intact.
+- **↩ Restore** puts it back exactly as it was, any time within **30 days**. After 30 days it's removed for good automatically
+  (or straight away with **Delete for good now…**, which also needs `DELETE` typed).
+- The admin (non-super) login can't delete Sundays or see the bin.

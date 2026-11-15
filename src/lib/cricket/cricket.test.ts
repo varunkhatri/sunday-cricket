@@ -358,3 +358,13 @@ describe("points rules by date", () => {
     expect(matchPerformances(b).some((x) => x.playerId === "A4")).toBe(true);
   });
 });
+
+describe("recently deleted bin", () => {
+  it("counts down 30 days, then the Sunday is due for removal", async () => {
+    const { binDaysLeft } = await import("../data/matchOps");
+    const now = Date.parse("2026-11-15T12:00:00Z");
+    expect(binDaysLeft("2026-11-15T12:00:00Z", now)).toBe(30);
+    expect(binDaysLeft("2026-11-01T12:00:00Z", now)).toBe(16);
+    expect(binDaysLeft("2026-10-16T12:00:00Z", now)).toBe(0);
+  });
+});

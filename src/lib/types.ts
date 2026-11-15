@@ -17,6 +17,9 @@ export interface MatchDay {
   mvp_note?: string | null;
   /** null = automatic (locked once the day is in the past), true = locked, false = unlocked for corrections */
   locked?: boolean | null;
+  /** set when the Sunday is in the "Recently deleted" bin (hidden everywhere, restorable for 30 days) */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 

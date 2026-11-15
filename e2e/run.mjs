@@ -367,6 +367,70 @@ await page.goto(dayUrl);
 ok(await page.getByRole("button", { name: /Add .* go to toss/ }).isVisible(), "admin can still manage today's Sunday");
 await page.goto(BASE + "/admin/players");
 ok(await page.getByText("Only the super admin can rename players").isVisible(), "admin can't rename players");
+
+// ---------- deleting a Sunday: super admin only, typed confirmation, "Recently deleted" bin ----------
+await page.goto(dayUrl);
+ok(await page.getByText("Only the super admin can delete a Sunday").isVisible(), "admin (non-super) can't delete a Sunday");
+ok((await page.getByText("Delete this Sunday…").count()) === 0, "admin has no delete option");
+const dayIdToBin = dayUrl.split("/").pop();
+await page.goto(BASE + "/admin/deleted");
+ok(await page.getByText("Only the super admin can see deleted Sundays").isVisible(), "admin can't see or restore deleted Sundays");
+await page.getByRole("button", { name: "Log out" }).click();
+await page.waitForURL(BASE + "/");
+await page.goto(BASE + "/login");
+await page.getByLabel("Username").fill("admin");
+await page.getByLabel("Password").fill("admin");
+await page.getByRole("button", { name: "Log in" }).click();
+await page.waitForURL(BASE + "/admin");
+const snap = async () => {
+  const d = await page.evaluate(async () => (await fetch("/api/export")).json());
+  const mids = d.matches.filter((m) => m.match_day_id === dayIdToBin).map((m) => m.id);
+  return {
+    day: d.match_days.find((x) => x.id === dayIdToBin),
+    matches: mids.length,
+    balls: d.balls.filter((b) => mids.includes(b.match_id)).length,
+    teams: d.day_teams.filter((t) => t.match_day_id === dayIdToBin).length,
+    photos: d.photos.filter((p) => p.match_day_id === dayIdToBin).length,
+  };
+};
+const before = await snap();
+const someMatch = (await page.evaluate(async () => (await fetch("/api/export")).json())).matches.find((m) => m.match_day_id === dayIdToBin && m.status === "completed");
+await page.goto(dayUrl);
+await page.getByText("Delete this Sunday…").click();
+await page.getByLabel("Type DELETE to confirm").fill("yes");
+await page.getByRole("button", { name: "Delete this Sunday" }).click();
+await page.getByText("Type DELETE in the box to confirm").waitFor();
+ok(true, "wrong confirmation text is refused");
+await page.getByLabel("Type DELETE to confirm").fill("delete");
+await page.getByRole("button", { name: "Delete this Sunday" }).click();
+await page.waitForURL(/\/admin\?binned=1/);
+ok(await page.getByText("moved to Recently deleted").isVisible(), "deleting moves the Sunday to Recently deleted");
+ok(await page.getByRole("link", { name: /Recently deleted \(1\)/ }).isVisible(), "Umpire desk shows 1 in Recently deleted");
+const hiddenMatch = await page.request.get(BASE + `/matches/${someMatch.id}`);
+ok(hiddenMatch.status() === 404, "a deleted Sunday's matches are hidden from everyone");
+await page.goto(BASE + "/history");
+ok((await page.locator(`a[href="/days/${dayIdToBin}"]`).count()) === 0, "a deleted Sunday is left out of History");
+await page.goto(BASE + "/admin/deleted");
+ok(await page.getByText("removed for good in 30 days").isVisible(), "bin shows 30 days left");
+await shot("16-recently-deleted");
+await page.getByRole("button", { name: "↩ Restore" }).click();
+await page.waitForURL(new RegExp(`/admin/days/${dayIdToBin}$`));
+const after = await snap();
+ok(!after.day.deleted_at && after.matches === before.matches && after.balls === before.balls && after.teams === before.teams && after.photos === before.photos,
+  `restore brings everything back (${after.matches} matches, ${after.balls} balls, ${after.teams} teams, ${after.photos} photos)`);
+ok((await page.request.get(BASE + `/matches/${someMatch.id}`)).status() === 200, "restored matches are visible again");
+// delete for good from the bin
+await page.getByText("Delete this Sunday…").click();
+await page.getByLabel("Type DELETE to confirm").fill("DELETE");
+await page.getByRole("button", { name: "Delete this Sunday" }).click();
+await page.waitForURL(/\/admin\?binned=1/);
+await page.goto(BASE + "/admin/deleted");
+await page.getByText("Delete for good now…").click();
+await page.getByLabel("Type DELETE to delete for good").fill("DELETE");
+await page.getByRole("button", { name: "Delete for good" }).click();
+await page.getByText("The Sunday was deleted for good").waitFor();
+const gone = await snap();
+ok(!gone.day && gone.balls === 0, "delete for good removes it completely");
 await ctx.setDefaultTimeout(5000);
 console.log(errors.length ? "Console errors:\n" + errors.join("\n") : "✓ no browser console errors");
 await browser.close();

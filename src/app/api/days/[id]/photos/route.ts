@@ -11,7 +11,7 @@ const TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   if (!isAdmin()) return NextResponse.json({ error: "Only the admin can upload photos" }, { status: 401 });
   const day = await store().get<MatchDay>("match_days", params.id);
-  if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+  if (!day || day.deleted_at) return NextResponse.json({ error: "Day not found" }, { status: 404 });
   const existing = await store().list<Photo>("photos", { match_day_id: params.id });
   if (existing.length >= 4) return NextResponse.json({ error: "Max 4 photos per day — delete one first" }, { status: 400 });
 
