@@ -146,3 +146,14 @@ With no signal, pages already opened still show their last scores; the umpire's 
 - **↩ Restore** puts it back exactly as it was, any time within **30 days**. After 30 days it's removed for good automatically
   (or straight away with **Delete for good now…**, which also needs `DELETE` typed).
 - The admin (non-super) login can't delete Sundays or see the bin.
+
+
+## Player head-to-head stats and profile pictures
+- **Players → pick a player** shows, on top of the career numbers:
+  - **Batting:** how often he's out each way (bowled, caught, LBW, run out, stumped, hit wicket, out of box), who catches / runs him out,
+    runs, balls, strike rate, 4s/6s and dismissals **against each bowler**, plus "Scores most off" and "Gets him out most".
+  - **Bowling:** how his wickets come (bowled, caught, LBW…, incl. caught & bowled), and **each batter he's bowled to** —
+    times dismissed, balls, runs and runs per over — plus "Favourite wicket" and "Hardest to bowl to".
+  These are worked out from the ball-by-ball scores of all finished matches, so past games are included automatically.
+- **Profile pictures (super admin):** open a player → **📷 Add picture** (it's cropped to a square automatically) → **Change** or **Remove** any time.
+  Pictures appear on the player's page, the Players list, Stats and Captains tables, scorecards and the award cards.

@@ -23,6 +23,7 @@ export default async function AdminPlayers() {
       </section>
       <section className="space-y-2">
         <h2 className="h2">Roster ({players.length})</h2>
+        {canRename && <p className="text-sm muted">📷 To add a profile picture, open the player from the <b>Players</b> tab and tap <b>Add picture</b>.</p>}
         {!canRename && <p className="text-sm muted">Only the super admin can rename players (names show in every past scorecard).</p>}
         {canRename ? players.map((p) => (
           <ActionForm key={p.id} action={updatePlayer} className="card grid grid-cols-[1fr_1fr_auto] items-center gap-2 p-3">

@@ -12,7 +12,7 @@ export default async function PlayersPage() {
     <div className="space-y-4">
       <h1 className="h1">Players</h1>
       <PlayerSearch
-        players={players.map((p) => ({ id: p.id, name: p.name, nickname: p.nickname, matches: agg.get(p.id)?.matches ?? 0, runs: agg.get(p.id)?.runs ?? 0, wickets: agg.get(p.id)?.wickets ?? 0 }))}
+        players={players.map((p) => ({ id: p.id, name: p.name, nickname: p.nickname, photo_url: p.photo_url, matches: agg.get(p.id)?.matches ?? 0, runs: agg.get(p.id)?.runs ?? 0, wickets: agg.get(p.id)?.wickets ?? 0 }))}
       />
     </div>
   );

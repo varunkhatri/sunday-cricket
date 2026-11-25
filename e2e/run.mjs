@@ -431,6 +431,48 @@ await page.getByRole("button", { name: "Delete for good" }).click();
 await page.getByText("The Sunday was deleted for good").waitFor();
 const gone = await snap();
 ok(!gone.day && gone.balls === 0, "delete for good removes it completely");
+
+// ---------- player head-to-head stats + profile pictures ----------
+const allData = await page.evaluate(async () => (await fetch("/api/export")).json());
+// pick a seeded regular with plenty of history
+const regular = allData.players.find((p) => p.name === "Raj Patel");
+await page.goto(BASE + `/players/${regular.id}`);
+ok(await page.getByText("Batting: how he gets out").isVisible(), "player page shows how the batter gets out");
+ok(await page.getByText("Against bowler").isVisible() && (await page.locator("table:has(th:text('Against bowler')) tbody tr").count()) > 0, "player page lists runs against each bowler");
+ok(await page.getByText("Scores most off").isVisible(), "player page highlights the bowler he scores most off");
+ok(await page.getByText("Bowling: how he takes wickets").isVisible() && (await page.locator("table:has(th:text('Against batter')) tbody tr").count()) > 0, "player page shows bowling dismissals and victims");
+await page.getByText("Batting: how he gets out").scrollIntoViewIfNeeded();
+await shot("17-player-matchups");
+// picture upload (super admin)
+await page.locator("input[aria-label='Choose a profile picture']").setInputFiles(`${SHOTS}/photo3.jpg`);
+await page.getByRole("button", { name: "📷 Change picture" }).waitFor({ timeout: 15000 });
+const picSrc = await page.locator("main img").first().getAttribute("src");
+ok(!!picSrc && picSrc.includes("/api/local-photo/"), "super admin uploaded a profile picture");
+await page.goto(BASE + "/players");
+await page.getByLabel("Search players").fill("Raj Patel");
+ok((await page.locator(`a[href="/players/${regular.id}"] img`).count()) === 1, "picture shows in the players list");
+await page.goto(BASE + "/stats");
+ok((await page.locator(`a[href="/players/${regular.id}"] img`).count()) >= 1, "picture shows in the stats leaderboard");
+await shot("18-leaderboard-pictures");
+// only the super admin can change pictures
+const viewerCtx = await browser.newContext();
+const viewer = await viewerCtx.newPage();
+const fdTry = await viewer.request.post(BASE + `/api/players/${regular.id}/photo`, { multipart: { file: { name: "x.jpg", mimeType: "image/jpeg", buffer: Buffer.from([1, 2, 3]) } } });
+ok(fdTry.status() === 401, "viewers can't change pictures");
+await viewer.goto(BASE + "/login");
+await viewer.getByLabel("Username").fill("umpire");
+await viewer.getByLabel("Password").fill("umpire");
+await viewer.getByRole("button", { name: "Log in" }).click();
+await viewer.waitForURL(BASE + "/admin");
+await viewer.goto(BASE + `/players/${regular.id}`);
+ok((await viewer.getByRole("button", { name: /picture/ }).count()) === 0, "admin (non-super) has no picture upload");
+const staffTry = await viewer.request.delete(BASE + `/api/players/${regular.id}/photo`);
+ok(staffTry.status() === 401, "admin (non-super) can't remove pictures");
+await viewerCtx.close();
+await page.goto(BASE + `/players/${regular.id}`);
+await page.getByRole("button", { name: "Remove" }).click();
+await page.getByRole("button", { name: "📷 Add picture" }).waitFor({ timeout: 15000 });
+ok(true, "super admin can remove a picture");
 await ctx.setDefaultTimeout(5000);
 console.log(errors.length ? "Console errors:\n" + errors.join("\n") : "✓ no browser console errors");
 await browser.close();

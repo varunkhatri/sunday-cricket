@@ -6,6 +6,12 @@ export async function getPlayers(): Promise<Player[]> {
   return ps.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Profile picture URL for each player who has one. */
+export async function getPlayerPhotos(): Promise<Record<ID, string>> {
+  const ps = await store().list<Player>("players");
+  return Object.fromEntries(ps.filter((p) => p.photo_url).map((p) => [p.id, p.photo_url as string]));
+}
+
 export async function getPlayerNames(): Promise<Record<ID, string>> {
   const ps = await store().list<Player>("players");
   return Object.fromEntries(ps.map((p) => [p.id, p.nickname?.trim() || p.name]));

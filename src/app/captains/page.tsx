@@ -2,13 +2,15 @@ import Link from "next/link";
 import { Suspense } from "react";
 import MonthPicker from "@/components/MonthPicker";
 import { aggregateCaptains } from "@/lib/cricket/stats";
-import { getPlayerNames } from "@/lib/data/queries";
+import { getPlayerNames, getPlayerPhotos } from "@/lib/data/queries";
+import Avatar from "@/components/Avatar";
 import { availableMonths, loadRange } from "@/lib/data/statsLoader";
 
 export const dynamic = "force-dynamic";
 
 export default async function CaptainsPage({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const [{ days }, names, months] = await Promise.all([loadRange(searchParams), getPlayerNames(), availableMonths()]);
+  const photos = await getPlayerPhotos();
   const caps = aggregateCaptains(days);
   return (
     <div className="space-y-4">
@@ -25,7 +27,7 @@ export default async function CaptainsPage({ searchParams }: { searchParams: Rec
             {caps.slice(0, 3).map((c, i) => (
               <div key={c.playerId} className={`card p-4 ${i === 0 ? "border-gold-300 bg-gold-100/40" : ""}`}>
                 <p className="text-2xl">{["🥇", "🥈", "🥉"][i]}</p>
-                <Link href={`/players/${c.playerId}`} className="font-display text-lg font-bold hover:underline">{names[c.playerId]}</Link>
+                <Link href={`/players/${c.playerId}`} className="mt-1 flex items-center gap-2 font-display text-lg font-bold hover:underline"><Avatar name={names[c.playerId] ?? "?"} url={photos[c.playerId]} size={36} />{names[c.playerId]}</Link>
                 <p className="tabular-nums muted">{c.won}W · {c.lost}L{c.tied ? ` · ${c.tied}T` : ""} · {c.winPct.toFixed(0)}%</p>
               </div>
             ))}
@@ -36,7 +38,7 @@ export default async function CaptainsPage({ searchParams }: { searchParams: Rec
               <tbody>
                 {caps.map((c) => (
                   <tr key={c.playerId}>
-                    <td className="font-semibold"><Link href={`/players/${c.playerId}`} className="hover:underline">{names[c.playerId]}</Link></td>
+                    <td className="font-semibold"><Link href={`/players/${c.playerId}`} className="inline-flex items-center gap-2 hover:underline"><Avatar name={names[c.playerId] ?? "?"} url={photos[c.playerId]} size={24} />{names[c.playerId]}</Link></td>
                     <td className="num">{c.matches}</td><td className="num font-bold text-pitch-700">{c.won}</td><td className="num">{c.lost}</td><td className="num">{c.tied}</td>
                     <td className="num">{c.winPct.toFixed(0)}%</td><td className="num">{c.seriesWon}/{c.seriesPlayed}</td>
                   </tr>

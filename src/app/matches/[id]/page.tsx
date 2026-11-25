@@ -7,7 +7,7 @@ import Summary from "@/components/Summary";
 import RunRateCharts from "@/components/RunRateCharts";
 import { runRateSeries } from "@/lib/cricket/runrate";
 import { computeMatch, ballSymbol, teamName } from "@/lib/cricket/engine";
-import { getDay, getMatchBundle, getPlayerNames } from "@/lib/data/queries";
+import { getDay, getMatchBundle, getPlayerNames, getPlayerPhotos } from "@/lib/data/queries";
 import { fmtDate } from "@/lib/format";
 import { isAdmin } from "@/lib/auth";
 
@@ -59,7 +59,7 @@ export default async function MatchPage({ params }: { params: { id: string } }) 
         <article className="card p-4 sm:p-5"><Summary text={bundle.match.summary} /></article>
       )}
       <RunRateCharts series={runRateSeries(bundle)} overs={bundle.match.overs} />
-      <ScorecardView bundle={bundle} names={names} />
+      <ScorecardView bundle={bundle} names={names} photos={await getPlayerPhotos()} />
     </div>
   );
 }

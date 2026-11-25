@@ -1,12 +1,13 @@
 import Link from "next/link";
 import DayView from "@/components/DayView";
-import { getDayFull, getPlayerNames, listDays } from "@/lib/data/queries";
+import { getDayFull, getPlayerNames, getPlayerPhotos, listDays } from "@/lib/data/queries";
 import { isAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const [days, names] = await Promise.all([listDays(), getPlayerNames()]);
+  const photos = await getPlayerPhotos();
   const admin = isAdmin();
   if (!days.length)
     return (
@@ -20,7 +21,7 @@ export default async function Home() {
   const data = await getDayFull(days[0].id);
   return (
     <>
-      <DayView data={data!} names={names} admin={admin} />
+      <DayView data={data!} names={names} playerPhotos={photos} admin={admin} />
       {days.length > 1 && (
         <p className="mt-8 text-center"><Link href="/history" className="btn-ghost">See previous Sundays →</Link></p>
       )}

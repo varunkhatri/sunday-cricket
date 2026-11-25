@@ -368,3 +368,48 @@ describe("recently deleted bin", () => {
     expect(binDaysLeft("2026-10-16T12:00:00Z", now)).toBe(0);
   });
 });
+
+describe("player matchups (how out, vs bowlers, victims)", () => {
+  it("counts how a batter gets out and runs off each bowler", async () => {
+    const { playerMatchups } = await import("./matchups");
+    const b = mkBundle("h1", [], []);
+    const i1 = "h1i1";
+    b.innings = [{ id: i1, match_id: "h1", innings_no: 1, batting_team_id: "TA", bowling_team_id: "TB", closed: false, created_at: "" }];
+    const mk = (p: Partial<Ball>) => ({ ...ball({ inn: i1, ...p }), match_id: "h1" });
+    b.balls = [
+      mk({ striker_id: "A1", bowler_id: "B1", runs_bat: 4 }),
+      mk({ striker_id: "A1", bowler_id: "B1", extra_type: "wide", extra_runs: 1 }),
+      mk({ striker_id: "A1", bowler_id: "B1", runs_bat: 6 }),
+      mk({ striker_id: "A1", bowler_id: "B2", runs_bat: 1 }),
+      mk({ striker_id: "A2", non_striker_id: "A1", bowler_id: "B2", runs_bat: 0 }),
+      mk({ striker_id: "A1", bowler_id: "B2", wicket_type: "caught", dismissed_id: "A1", fielder_id: "B3" }),
+      mk({ striker_id: "A2", non_striker_id: "A3", bowler_id: "B1", wicket_type: "run_out", dismissed_id: "A2", fielder_id: "B4" }),
+    ];
+    const a1 = playerMatchups([b], "A1");
+    expect(a1.batting).toMatchObject({ innings: 1, outs: 1, notOuts: 0, howOut: { caught: 1 }, caughtBy: { B3: 1 } });
+    const vsB1 = a1.batting.vsBowlers.find((f) => f.playerId === "B1")!;
+    expect(vsB1).toMatchObject({ runs: 10, balls: 2, fours: 1, sixes: 1, outs: 0 });
+    expect(a1.batting.vsBowlers[0].playerId).toBe("B1"); // scores most off B1
+    expect(a1.batting.vsBowlers.find((f) => f.playerId === "B2")).toMatchObject({ runs: 1, balls: 2, outs: 1 });
+
+    const a2 = playerMatchups([b], "A2");
+    expect(a2.batting.howOut).toEqual({ run_out: 1 });
+    expect(a2.batting.runOutBy).toEqual({ B4: 1 });
+    expect(a2.batting.vsBowlers.find((f) => f.playerId === "B1")?.outs ?? 0).toBe(0); // run out isn't the bowler's wicket
+
+    const b2 = playerMatchups([b], "B2");
+    expect(b2.bowling).toMatchObject({ wickets: 1, howOut: { caught: 1 } });
+    expect(b2.bowling.victims[0]).toMatchObject({ playerId: "A1", outs: 1, runs: 1, balls: 2 });
+    expect(playerMatchups([b], "B1").bowling.wickets).toBe(0);
+  });
+  it("retired batters count as retired, not out", async () => {
+    const { playerMatchups } = await import("./matchups");
+    const b = mkBundle("h2", [], []);
+    b.innings = [{ id: "h2i1", match_id: "h2", innings_no: 1, batting_team_id: "TA", bowling_team_id: "TB", closed: false, created_at: "" }];
+    b.balls = [
+      { ...ball({ inn: "h2i1", striker_id: "A1", runs_bat: 2 }), match_id: "h2" },
+      { ...ball({ inn: "h2i1", striker_id: "A1", wicket_type: "retired", dismissed_id: "A1" }), match_id: "h2", non_delivery: true },
+    ];
+    expect(playerMatchups([b], "A1").batting).toMatchObject({ innings: 1, outs: 0, retired: 1, notOuts: 0, howOut: {} });
+  });
+});

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import MonthPicker from "@/components/MonthPicker";
 import { aggregateCaptains, aggregatePlayers, topBy } from "@/lib/cricket/stats";
-import { getPlayerNames } from "@/lib/data/queries";
+import { getPlayerNames, getPlayerPhotos } from "@/lib/data/queries";
+import Avatar from "@/components/Avatar";
 import { availableMonths, loadRange } from "@/lib/data/statsLoader";
 import { dayOverview } from "@/lib/dayView";
 import { fmtDate, fmtMonth } from "@/lib/format";
@@ -15,6 +16,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Reco
   if (!month)
     return <p className="card p-6 text-center muted">No Sundays recorded yet.</p>;
   const [{ days, perfs }, names] = await Promise.all([loadRange({ month }), getPlayerNames()]);
+  const photos = await getPlayerPhotos();
   const agg = aggregatePlayers(perfs);
   const mvp = topBy(agg, (a) => a.points);
   const bat = topBy(agg, (a) => a.runs, (a) => a.balls);
@@ -52,7 +54,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Reco
           {awards.map((a) => (
             <div key={a.label} className={`card p-4 ${a.icon === "🏆" ? "shine col-span-2 border-gold-300 sm:col-span-1" : ""}`}>
               <p className="text-xs font-bold uppercase tracking-wider text-ink/50">{a.icon} {a.label}</p>
-              <Link href={`/players/${a.who}`} className="mt-1 block font-display text-lg font-bold hover:underline">{names[a.who]}</Link>
+              <Link href={`/players/${a.who}`} className="mt-1 flex items-center gap-2 font-display text-lg font-bold hover:underline"><Avatar name={names[a.who] ?? "?"} url={photos[a.who]} size={36} />{names[a.who]}</Link>
               <p className="text-sm muted">{a.detail}</p>
             </div>
           ))}

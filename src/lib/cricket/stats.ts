@@ -10,6 +10,8 @@ export interface PlayerMatchPerf {
   dayId: ID;
   teamId: ID | null;
   batted: boolean;
+  /** each innings batted in this match (two for a common player who batted for both sides) */
+  inns: { runs: number; balls: number; out: boolean }[];
   runs: number;
   balls: number;
   fours: number;
@@ -81,13 +83,17 @@ export function pointsBreakdown(p: RawPerf, POINTS: PointsRules = POINTS_NOV_202
     p.runs * POINTS.run +
     p.fours * POINTS.fourBonus +
     p.sixes * POINTS.sixBonus +
-    (p.runs >= 30 ? POINTS.thirty : 0) +
-    (p.runs >= 50 ? POINTS.fifty : 0);
+    // milestone bonuses go per innings (a common player can bat twice in one match)
+    scores(p).filter((r) => r >= 30).length * POINTS.thirty +
+    scores(p).filter((r) => r >= 50).length * POINTS.fifty;
   const bowl = p.wickets * POINTS.wicket + p.maidens * POINTS.maiden + (p.wickets >= 3 ? POINTS.threeFor : 0);
   const field = (p.catches + p.runOuts + p.stumpings) * POINTS.fielding;
   const win = p.won ? POINTS.win : 0;
   return { bat, bowl, field, win, total: bat + bowl + field + win };
 }
+
+/** Each innings' score in a match (falls back to the match total for older callers). */
+const scores = (p: { runs: number; inns?: { runs: number }[] }) => (p.inns && p.inns.length ? p.inns.map((i) => i.runs) : [p.runs]);
 
 export function perfPoints(p: RawPerf, rules?: PointsRules) {
   return pointsBreakdown(p, rules).total;
@@ -122,6 +128,7 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
         dayId: bundle.match.match_day_id,
         teamId,
         batted: false,
+        inns: [],
         runs: 0,
         balls: 0,
         fours: 0,
@@ -155,6 +162,7 @@ export function matchPerformances(bundle: MatchBundle): PlayerMatchPerf[] {
       p.fours += r.fours;
       p.sixes += r.sixes;
       p.out = p.out || r.out;
+      p.inns.push({ runs: r.runs, balls: r.balls, out: r.out });
     }
     for (const r of sc.bowling) {
       const p = get(r.playerId, teamOf(bundle, r.playerId)?.id ?? inn.bowling_team_id);
@@ -257,19 +265,23 @@ export function aggregatePlayers(perfs: PlayerMatchPerf[]): PlayerAgg[] {
     if (p.won === true) a.wins++;
     if (p.won === false) a.losses++;
     if (p.batted) {
-      a.innings++;
       a.runs += p.runs;
       a.balls += p.balls;
       a.fours += p.fours;
       a.sixes += p.sixes;
-      if (p.out) a.outs++;
-      if (p.runs > a.highest || (p.runs === a.highest && !p.out)) {
-        a.highest = p.runs;
-        a.highestNotOut = !p.out;
+      // count every innings on its own (a common player can bat for both sides in one match)
+      const inns = p.inns && p.inns.length ? p.inns : [{ runs: p.runs, balls: p.balls, out: p.out }];
+      for (const i of inns) {
+        a.innings++;
+        if (i.out) a.outs++;
+        if (i.runs > a.highest || (i.runs === a.highest && !i.out)) {
+          a.highest = i.runs;
+          a.highestNotOut = !i.out;
+        }
+        if (i.runs >= 50) a.fifties++;
+        else if (i.runs >= 30) a.thirties++;
+        if (i.runs === 0 && i.out) a.ducks++;
       }
-      if (p.runs >= 50) a.fifties++;
-      else if (p.runs >= 30) a.thirties++;
-      if (p.runs === 0 && p.out) a.ducks++;
     }
     if (p.bowled) {
       a.bowlInnings++;

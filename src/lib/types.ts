@@ -4,6 +4,9 @@ export interface Player {
   id: ID;
   name: string;
   nickname?: string | null;
+  /** profile picture (set by the super admin) */
+  photo_url?: string | null;
+  photo_path?: string | null;
   created_at: string;
 }
 

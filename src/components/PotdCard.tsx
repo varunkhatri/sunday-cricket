@@ -1,13 +1,14 @@
 import Link from "next/link";
 import type { DayAward } from "@/lib/cricket/stats";
+import { AwardFace } from "./Avatar";
 
-export default function PotdCard({ award, text, name, runnersUp, names }: {
-  award: DayAward; text: string; name: string; runnersUp?: DayAward[]; names: Record<string, string>;
+export default function PotdCard({ award, text, name, runnersUp, names, photo }: {
+  award: DayAward; text: string; name: string; runnersUp?: DayAward[]; names: Record<string, string>; photo?: string | null;
 }) {
   return (
     <section className="shine relative overflow-hidden rounded-2xl border border-gold-300 p-5 shadow-card">
       <div className="flex items-start gap-4">
-        <div className="text-5xl sm:text-6xl drop-shadow" aria-hidden>🏆</div>
+        <AwardFace name={name} url={photo} emoji="🏆" />
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-widest text-gold-700">Player of the Day</p>
           <Link href={`/players/${award.playerId}`} className="font-display text-2xl sm:text-3xl font-extrabold text-pitch-900 hover:underline">

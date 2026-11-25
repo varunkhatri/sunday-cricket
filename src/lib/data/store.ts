@@ -13,7 +13,8 @@ export interface Store {
   insert<T>(table: Table, row: Record<string, unknown>): Promise<T>;
   update<T>(table: Table, id: string, patch: Record<string, unknown>): Promise<T>;
   remove(table: Table, filter: Filter): Promise<void>;
-  uploadFile(name: string, data: Buffer, contentType: string): Promise<{ path: string; url: string }>;
+  /** folder: optional storage folder (e.g. "players"); default is a folder per date */
+  uploadFile(name: string, data: Buffer, contentType: string, folder?: string): Promise<{ path: string; url: string }>;
   deleteFile(path: string): Promise<void>;
 }
 
@@ -177,8 +178,8 @@ const supabaseStore: Store = {
     const { error } = await applyFilter(supa().from(table).delete(), filter);
     if (error) throw new Error(error.message);
   },
-  async uploadFile(name, data, contentType) {
-    const p = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${name.replace(/[^\w.-]/g, "_")}`;
+  async uploadFile(name, data, contentType, folder) {
+    const p = `${folder ?? new Date().toISOString().slice(0, 10)}/${randomUUID()}-${name.replace(/[^\w.-]/g, "_")}`;
     const { error } = await supa().storage.from(BUCKET).upload(p, data, { contentType, upsert: false });
     if (error) throw new Error(error.message);
     const { data: pub } = supa().storage.from(BUCKET).getPublicUrl(p);

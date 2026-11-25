@@ -1,11 +1,12 @@
 import Link from "next/link";
+import Avatar from "./Avatar";
 import type { MatchBundle } from "@/lib/types";
 import { computeMatch, teamName } from "@/lib/cricket/engine";
 import { buildScorecard, dismissalText } from "@/lib/cricket/scorecard";
 import { f1, f2 } from "@/lib/format";
 import { matchSquad } from "@/lib/cricket/stats";
 
-export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; names: Record<string, string> }) {
+export default function ScorecardView({ bundle, names, photos = {} }: { bundle: MatchBundle; names: Record<string, string>; photos?: Record<string, string> }) {
   const st = computeMatch(bundle);
   const nm = (id: string | null) => (id ? names[id] ?? "?" : "?");
   const blocks = [
@@ -34,7 +35,7 @@ export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; 
                   {sc.batting.map((r) => (
                     <tr key={r.playerId}>
                       <td className="font-semibold">
-                        <Link href={`/players/${r.playerId}`} className="hover:underline">{nm(r.playerId)}</Link>
+                        <Link href={`/players/${r.playerId}`} className="inline-flex items-center gap-1.5 hover:underline"><Avatar name={nm(r.playerId)} url={photos[r.playerId]} size={22} />{nm(r.playerId)}</Link>
                         {!r.out && !r.retired && atCrease.has(r.playerId) && !state!.complete && r.playerId === state!.striker && <span className="text-ball"> *</span>}
                       </td>
                       <td className="text-xs muted">{dismissalText(r, nm)}</td>
@@ -58,7 +59,7 @@ export default function ScorecardView({ bundle, names }: { bundle: MatchBundle; 
                 <tbody>
                   {sc.bowling.map((r) => (
                     <tr key={r.playerId}>
-                      <td className="font-semibold"><Link href={`/players/${r.playerId}`} className="hover:underline">{nm(r.playerId)}</Link></td>
+                      <td className="font-semibold"><Link href={`/players/${r.playerId}`} className="inline-flex items-center gap-1.5 hover:underline"><Avatar name={nm(r.playerId)} url={photos[r.playerId]} size={22} />{nm(r.playerId)}</Link></td>
                       <td className="num">{r.overs}</td><td className="num">{r.maidens}</td><td className="num">{r.runs}</td>
                       <td className="num font-bold">{r.wickets}</td><td className="num">{f2(r.economy)}</td><td className="num">{r.wides}</td><td className="num">{r.noBalls}</td>
                     </tr>

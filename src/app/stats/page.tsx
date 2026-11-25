@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Leaderboard from "@/components/Leaderboard";
 import MonthPicker from "@/components/MonthPicker";
 import { aggregatePlayers } from "@/lib/cricket/stats";
-import { getPlayerNames } from "@/lib/data/queries";
+import { getPlayerNames, getPlayerPhotos } from "@/lib/data/queries";
 import { availableMonths, loadRange } from "@/lib/data/statsLoader";
 import { POINTS, POINTS_ORIGINAL } from "@/lib/cricket/stats";
 
@@ -19,7 +19,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Record
         <p className="muted">{days.length} Sunday{days.length === 1 ? "" : "s"} · {matches} completed match{matches === 1 ? "" : "es"}</p>
       </div>
       <Suspense><MonthPicker months={months} /></Suspense>
-      <Leaderboard rows={rows} names={names} />
+      <Leaderboard rows={rows} names={names} photos={await getPlayerPhotos()} />
       <details className="card p-4 text-sm">
         <summary className="cursor-pointer font-semibold text-pitch">How are MVP points worked out?</summary>
         <p className="mt-2 muted">

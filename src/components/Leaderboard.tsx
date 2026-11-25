@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Avatar from "./Avatar";
 import { useMemo, useState } from "react";
 import type { PlayerAgg } from "@/lib/cricket/stats";
 
@@ -66,7 +67,7 @@ const TABS: Record<string, { label: string; cols: Col[]; filter: (a: PlayerAgg) 
   },
 };
 
-export default function Leaderboard({ rows, names }: { rows: PlayerAgg[]; names: Record<string, string> }) {
+export default function Leaderboard({ rows, names, photos = {} }: { rows: PlayerAgg[]; names: Record<string, string>; photos?: Record<string, string> }) {
   const [tab, setTab] = useState<keyof typeof TABS>("overall");
   const [q, setQ] = useState("");
   const [minInn, setMinInn] = useState(0);
@@ -130,7 +131,11 @@ export default function Leaderboard({ rows, names }: { rows: PlayerAgg[]; names:
             {list.map((a, i) => (
               <tr key={a.playerId} className={i === 0 && !q ? "bg-gold-100/50" : ""}>
                 <td className="muted">{i === 0 && !q ? "🥇" : i === 1 && !q ? "🥈" : i === 2 && !q ? "🥉" : i + 1}</td>
-                <td className="font-semibold"><Link href={`/players/${a.playerId}`} className="hover:underline">{names[a.playerId] ?? "?"}</Link></td>
+                <td className="font-semibold">
+                  <Link href={`/players/${a.playerId}`} className="inline-flex items-center gap-2 hover:underline">
+                    <Avatar name={names[a.playerId] ?? "?"} url={photos[a.playerId]} size={26} />{names[a.playerId] ?? "?"}
+                  </Link>
+                </td>
                 {t.cols.map((c) => <td key={c.key} className={`num ${c.key === sortKey ? "font-bold" : ""}`}>{c.fmt ? c.fmt(a) : c.get(a) ?? "–"}</td>)}
               </tr>
             ))}

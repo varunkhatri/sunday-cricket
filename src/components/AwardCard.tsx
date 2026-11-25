@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AwardFace } from "./Avatar";
 
 const STYLES = {
   bat: { icon: "🏏", label: "Best Batsman of the Day", box: "border-sky-300 bg-gradient-to-br from-sky-100 via-white to-sky-50", tag: "text-sky-800" },
@@ -7,16 +8,14 @@ const STYLES = {
 } as const;
 
 /** A showcase card for Best Batsman / Bowler / Fielder, in the same spirit as the Player of the Day card. */
-export default function AwardCard({ kind, playerId, name, stat, points, text }: {
-  kind: keyof typeof STYLES; playerId: string; name: string; stat: string; points: number; text: string;
+export default function AwardCard({ kind, playerId, name, stat, points, text, photo }: {
+  kind: keyof typeof STYLES; playerId: string; name: string; stat: string; points: number; text: string; photo?: string | null;
 }) {
   const st = STYLES[kind];
   return (
     <section className={`relative overflow-hidden rounded-2xl border p-5 shadow-card ${st.box}`}>
       <div className="flex items-start gap-4">
-        <div className="relative shrink-0 text-5xl drop-shadow" aria-hidden>
-          🏅<span className="absolute -bottom-1 -right-2 text-2xl">{st.icon}</span>
-        </div>
+        {photo ? <AwardFace name={name} url={photo} emoji={st.icon} /> : <AwardFace name={name} emoji="🏅" badge={st.icon} />}
         <div className="min-w-0">
           <p className={`text-xs font-bold uppercase tracking-widest ${st.tag}`}>{st.label}</p>
           <Link href={`/players/${playerId}`} className="font-display text-2xl font-extrabold text-pitch-900 hover:underline">{name}</Link>
